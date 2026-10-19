@@ -117,7 +117,8 @@ async function cargar() {
     }).join('');
     $('#comandantes').innerHTML = p.comandantes.map(c => '<div class="row" style="margin-bottom:8px" data-cargo="' + esc(c.cargo) + '">' +
       '<div><label>' + esc(c.cargo) + ' (grado y nombre)</label><input data-f="grado_nombre" value="' + esc(c.grado_nombre) + '"></div>' +
-      '<div><label>Celular</label><input data-f="celular" inputmode="tel" value="' + esc(c.celular) + '"></div></div>').join('');
+      '<div><label>Celular</label><input data-f="celular" inputmode="tel" value="' + esc(c.celular) + '"></div>' +
+      '<div><label>Clave CallMeBot</label><input data-f="clave_callmebot" value="' + esc(c.clave_callmebot) + '"></div></div>').join('');
     $('#rondas').innerHTML = p.rondas.length ? '<tr><th>Fecha</th><th>Jefe de Ronda</th><th>Estado</th><th></th></tr>' + p.rondas.map(r =>
       '<tr><td>' + esc(r.fecha) + '</td><td>' + esc(r.grado_nombre) + '<br><small>' + (r.completado ? 'Enviada ' + esc(r.completado) : (r.enviado ? 'Enlace enviado ' + esc(r.enviado) : '')) + '</small></td>' +
       '<td><span class="badge ' + esc(r.estado) + '">' + esc(r.estado) + '</span></td><td>' +
@@ -139,7 +140,8 @@ $('#btnGuardarSemana').onclick = async () => {
 
 $('#btnGuardarCmd').onclick = async () => {
   const cmd = [...document.querySelectorAll('#comandantes [data-cargo]')].map(d => ({ cargo: d.dataset.cargo,
-    grado_nombre: d.querySelector('[data-f=grado_nombre]').value.trim(), celular: d.querySelector('[data-f=celular]').value.trim() }));
+    grado_nombre: d.querySelector('[data-f=grado_nombre]').value.trim(), celular: d.querySelector('[data-f=celular]').value.trim(),
+    clave_callmebot: d.querySelector('[data-f=clave_callmebot]').value.trim() }));
   try { await llamar('guardarComandantes', { comandantes: cmd }); aviso(msg, 'Comandantes guardados.', 'ok'); scrollTo(0, 0); }
   catch (e) { aviso(msg, e.message, 'err'); }
 };

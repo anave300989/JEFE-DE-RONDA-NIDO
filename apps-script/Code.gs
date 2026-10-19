@@ -5,7 +5,7 @@
  * Hojas que usa (se crean solas con instalar()):
  *   Responsables : semana (lunes), grado_nombre, celular, pin
  *   SantoSena    : fecha, santo, sena
- *   Comandantes  : cargo, grado_nombre, celular
+ *   Comandantes  : cargo, grado_nombre, celular, clave_callmebot
  *   Rondas       : id, fecha, grado_nombre, celular, token, estado, enviado, completado, pdf_id, fotos, novedades
  *
  * Propiedades del script (Configuración del proyecto > Propiedades del script):
@@ -79,7 +79,7 @@ const LISTA = [
 const HOJAS = {
   Responsables: ['semana', 'grado_nombre', 'celular', 'pin'],
   SantoSena: ['fecha', 'santo', 'sena'],
-  Comandantes: ['cargo', 'grado_nombre', 'celular'],
+  Comandantes: ['cargo', 'grado_nombre', 'celular', 'clave_callmebot'],
   Rondas: ['id', 'fecha', 'grado_nombre', 'celular', 'token', 'estado', 'enviado', 'completado', 'pdf_id', 'fotos', 'novedades']
 };
 
@@ -120,7 +120,12 @@ function carpeta_(sub) {
 
 /* ---------- Utilidades de hojas ---------- */
 
-function hoja_(n) { return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(n); }
+function hoja_(n) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(n);
+  const cols = HOJAS[n].length;
+  if (sh.getLastColumn() < cols) sh.getRange(1, 1, 1, cols).setValues([HOJAS[n]]);
+  return sh;
+}
 
 function filas_(n) {
   const v = hoja_(n).getDataRange().getDisplayValues();
@@ -203,6 +208,21 @@ function enviarWhatsApp_(numero, texto) {
   return res.getResponseCode() < 300;
 }
 
+/** Envía por CallMeBot (gratis). Cada destinatario activa su clave una sola vez. */
+function enviarCallMeBot_(numero, clave, texto) {
+  try {
+    const res = UrlFetchApp.fetch('https://api.callmebot.com/whatsapp.php?phone=%2B' + numero +
+      '&apikey=' + encodeURIComponent(clave) + '&text=' + encodeURIComponent(texto), { muteHttpExceptions: true });
+    return res.getResponseCode() < 300 && /queued|sent/i.test(res.getContentText());
+  } catch (e) { return false; }
+}
+
+/** Prueba: envía un mensaje de prueba por CallMeBot a cada comandante con clave. */
+function probarAvisoComandantes() {
+  filas_('Comandantes').filter(c => c.celular && c.clave_callmebot).forEach(c =>
+    Logger.log(c.cargo + ': ' + (enviarCallMeBot_(celular_(c.celular), c.clave_callmebot, 'Prueba del sistema de Control de Jefe de Ronda.') ? 'enviado' : 'ERROR')));
+}
+
 function enlaceWa_(numero, texto) {
   return 'https://wa.me/' + numero + '?text=' + encodeURIComponent(texto);
 }
@@ -248,7 +268,8 @@ const ACCIONES = {
     const msg = mensajeConfirmacion_(r);
     const avisos = filas_('Comandantes').filter(c => c.celular).map(c => {
       const n = celular_(c.celular);
-      return { cargo: c.cargo, automatico: enviarWhatsApp_(n, msg), enlace: enlaceWa_(n, msg) };
+      const auto = c.clave_callmebot ? enviarCallMeBot_(n, c.clave_callmebot, msg) : enviarWhatsApp_(n, msg);
+      return { cargo: c.cargo, automatico: auto, enlace: enlaceWa_(n, msg) };
     });
     return { avisos: avisos.filter(a => !a.automatico).map(a => ({ cargo: a.cargo, enlace: a.enlace })) };
   },
@@ -295,7 +316,7 @@ const ACCIONES = {
   },
   guardarComandantes: req => {
     admin_(req);
-    reemplazar_('Comandantes', () => true, req.comandantes.map(c => ({ cargo: c.cargo, grado_nombre: c.grado_nombre, celular: celular_(c.celular) })));
+    reemplazar_('Comandantes', () => true, req.comandantes.map(c => ({ cargo: c.cargo, grado_nombre: c.grado_nombre, celular: celular_(c.celular), clave_callmebot: c.clave_callmebot || '' })));
     return true;
   },
   generarHoy: req => { admin_(req); envioDiario(); return true; },

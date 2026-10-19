@@ -178,7 +178,8 @@ $('#vForm').onsubmit = async e => {
     try { localStorage.removeItem(BORRADOR); } catch (e) {}
     $('#vForm').classList.add('hidden'); msg.classList.add('hidden');
     $('#avisos').innerHTML = r.avisos.length ? '<p>Envíe la confirmación al Comando:</p>' + r.avisos.map(a =>
-      '<p><a class="btn full" target="_blank" rel="noopener" href="' + esc(a.enlace) + '">Avisar por WhatsApp al ' + esc(a.cargo) + '</a></p>').join('') : '';
+      '<p><a class="btn full" target="_blank" rel="noopener" href="' + esc(a.enlace) + '">Avisar por WhatsApp al ' + esc(a.cargo) + '</a></p>').join('')
+      : '<p class="msg ok">La confirmación fue enviada automáticamente al Comando.</p>';
     $('#vFin').classList.remove('hidden'); scrollTo(0, 0);
   } catch (err) {
     aviso(msg, err.message, 'err'); scrollTo(0, 0);
