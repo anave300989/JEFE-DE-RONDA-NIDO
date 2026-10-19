@@ -3,7 +3,7 @@
  * Backend en Google Apps Script (base de datos en Google Sheets, archivos en Google Drive).
  *
  * Hojas que usa (se crean solas con instalar()):
- *   Responsables : semana (lunes), grado_nombre, celular, pin
+ *   Responsables : fecha, grado_nombre, celular, pin   (dos por día)
  *   SantoSena    : fecha, santo, sena
  *   Comandantes  : cargo, grado_nombre, celular, clave_callmebot
  *   Rondas       : id, fecha, grado_nombre, celular, token, estado, enviado, completado, pdf_id, fotos, novedades
@@ -77,7 +77,7 @@ const LISTA = [
 ];
 
 const HOJAS = {
-  Responsables: ['semana', 'grado_nombre', 'celular', 'pin'],
+  Responsables: ['fecha', 'grado_nombre', 'celular', 'pin'],
   SantoSena: ['fecha', 'santo', 'sena'],
   Comandantes: ['cargo', 'grado_nombre', 'celular', 'clave_callmebot'],
   Rondas: ['id', 'fecha', 'grado_nombre', 'celular', 'token', 'estado', 'enviado', 'completado', 'pdf_id', 'fotos', 'novedades']
@@ -123,7 +123,8 @@ function carpeta_(sub) {
 function hoja_(n) {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(n);
   const cols = HOJAS[n].length;
-  if (sh.getLastColumn() < cols) sh.getRange(1, 1, 1, cols).setValues([HOJAS[n]]);
+  const enc = sh.getRange(1, 1, 1, cols).getDisplayValues()[0];
+  if (enc.join() !== HOJAS[n].join()) sh.getRange(1, 1, 1, cols).setValues([HOJAS[n]]);
   return sh;
 }
 
@@ -164,10 +165,10 @@ function celular_(c) {
 
 /* ---------- Envío diario ---------- */
 
-/** Crea las rondas del día para los dos responsables de la semana y envía los mensajes. */
+/** Crea las rondas del día para los dos responsables del día y envía los mensajes. */
 function envioDiario() {
   const fecha = hoy_();
-  const resp = filas_('Responsables').filter(r => r.semana === lunes_(fecha));
+  const resp = filas_('Responsables').filter(r => r.fecha === fecha);
   const ss = filas_('SantoSena').find(r => r.fecha === fecha) || { santo: '(sin cargar)', sena: '(sin cargar)' };
   const existentes = filas_('Rondas').filter(r => r.fecha === fecha);
   const url = PropertiesService.getScriptProperties().getProperty('WEB_URL') || '';
@@ -291,7 +292,7 @@ const ACCIONES = {
     const santos = filas_('SantoSena').filter(r => r.fecha >= semana && r.fecha <= finS);
     return {
       semana: semana,
-      responsables: filas_('Responsables').filter(r => r.semana === semana).map(limpiar_),
+      responsables: filas_('Responsables').filter(r => r.fecha >= semana && r.fecha <= finS).map(limpiar_),
       santoSena: santos.map(limpiar_),
       comandantes: filas_('Comandantes').map(limpiar_),
       rondas: filas_('Rondas').filter(r => r.fecha >= semana && r.fecha <= finS).reverse().map(r => {
@@ -305,11 +306,14 @@ const ACCIONES = {
   guardarSemana: req => {
     admin_(req);
     const semana = lunes_(req.semana);
-    if ((req.responsables || []).length > 2) throw new Error('Solo se permiten dos responsables por semana.');
-    reemplazar_('Responsables', r => r.semana === semana,
-      req.responsables.map(p => ({ semana: semana, grado_nombre: p.grado_nombre, celular: celular_(p.celular), pin: p.pin })));
     const fin = new Date(semana + 'T12:00:00'); fin.setDate(fin.getDate() + 6);
     const finS = Utilities.formatDate(fin, TZ, 'yyyy-MM-dd');
+    const resp = (req.responsables || []).filter(p => p.fecha >= semana && p.fecha <= finS);
+    const porDia = {};
+    resp.forEach(p => porDia[p.fecha] = (porDia[p.fecha] || 0) + 1);
+    if (Object.keys(porDia).some(f => porDia[f] > 2)) throw new Error('Solo se permiten dos responsables por día.');
+    reemplazar_('Responsables', r => r.fecha >= semana && r.fecha <= finS,
+      resp.map(p => ({ fecha: p.fecha, grado_nombre: p.grado_nombre, celular: celular_(p.celular), pin: p.pin })));
     reemplazar_('SantoSena', r => r.fecha >= semana && r.fecha <= finS,
       req.santoSena.filter(x => x.fecha >= semana && x.fecha <= finS));
     return true;
@@ -343,7 +347,7 @@ function admin_(req) {
 function rondaPorToken_(token, pin) {
   const r = filas_('Rondas').find(x => x.token && x.token === token);
   if (!r) throw new Error('Enlace no válido.');
-  const p = filas_('Responsables').find(x => x.semana === lunes_(r.fecha) && celular_(x.celular) === r.celular);
+  const p = filas_('Responsables').find(x => x.fecha === r.fecha && celular_(x.celular) === r.celular);
   if (p && p.pin && String(p.pin) !== String(pin)) { Utilities.sleep(1500); throw new Error('PIN incorrecto.'); }
   const limite = new Date(r.fecha + 'T12:00:00'); limite.setDate(limite.getDate() + 1);
   if (hoy_() > Utilities.formatDate(limite, TZ, 'yyyy-MM-dd')) throw new Error('Este enlace ya venció.');

@@ -34,11 +34,9 @@
     </div>
 
     <div class="card">
-      <h2>Responsables de ronda de la semana</h2>
-      <div id="responsables"></div>
-      <h2 style="margin-top:16px">Santo y seña por día</h2>
-      <table class="lista" id="santoSena"></table>
-      <p></p>
+      <h2>Rol de ronda de la semana</h2>
+      <p style="font-size:14px;color:var(--muted)">Cada día: los dos Jefes de Ronda y el santo y seña.</p>
+      <div id="dias"></div>
       <button id="btnGuardarSemana" class="full">Guardar semana</button>
     </div>
 
@@ -107,13 +105,18 @@ async function cargar() {
     const p = await llamar('panel', { fecha: $('#fechaSemana').value });
     $('#rangoSemana').textContent = 'Del ' + p.semana + ' al ' + sumar(p.semana, 6);
     window.semana = p.semana;
-    $('#responsables').innerHTML = [0, 1].map(i => { const r = p.responsables[i] || {}; return '<div class="row" style="margin-bottom:8px">' +
-      '<div><label>Responsable ' + (i + 1) + ' (grado y nombre)</label><input data-f="grado_nombre" data-i="' + i + '" value="' + esc(r.grado_nombre) + '"></div>' +
-      '<div><label>Celular</label><input data-f="celular" data-i="' + i + '" inputmode="tel" value="' + esc(r.celular) + '"></div>' +
-      '<div><label>PIN (4 dígitos)</label><input data-f="pin" data-i="' + i + '" inputmode="numeric" maxlength="6" value="' + esc(r.pin) + '"></div></div>'; }).join('');
-    $('#santoSena').innerHTML = '<tr><th>Día</th><th>Santo</th><th>Seña</th></tr>' + DIAS.map((d, i) => {
+    $('#dias').innerHTML = DIAS.map((d, i) => {
       const f = sumar(p.semana, i), s = p.santoSena.find(x => x.fecha === f) || {};
-      return '<tr data-fecha="' + f + '"><td>' + d + '<br><small>' + f + '</small></td><td><input data-f="santo" value="' + esc(s.santo) + '"></td><td><input data-f="sena" value="' + esc(s.sena) + '"></td></tr>';
+      const rs = p.responsables.filter(x => x.fecha === f);
+      return '<div class="dia" data-fecha="' + f + '" style="border-top:1px solid var(--line);padding:12px 0">' +
+        '<b>' + d + ' ' + f.split('-').reverse().join('/') + '</b>' +
+        '<div class="row"><div><label>Santo</label><input data-f="santo" value="' + esc(s.santo) + '"></div>' +
+        '<div><label>Seña</label><input data-f="sena" value="' + esc(s.sena) + '"></div></div>' +
+        [0, 1].map(j => { const r = rs[j] || {}; return '<div class="row resp">' +
+          '<div><label>Jefe de Ronda ' + (j + 1) + ' (grado y nombre)</label><input data-f="grado_nombre" value="' + esc(r.grado_nombre) + '"></div>' +
+          '<div><label>Celular</label><input data-f="celular" inputmode="tel" value="' + esc(r.celular) + '"></div>' +
+          '<div><label>PIN</label><input data-f="pin" inputmode="numeric" maxlength="6" value="' + esc(r.pin) + '"></div></div>'; }).join('') +
+        '</div>';
     }).join('');
     $('#comandantes').innerHTML = p.comandantes.map(c => '<div class="row" style="margin-bottom:8px" data-cargo="' + esc(c.cargo) + '">' +
       '<div><label>' + esc(c.cargo) + ' (grado y nombre)</label><input data-f="grado_nombre" value="' + esc(c.grado_nombre) + '"></div>' +
@@ -130,10 +133,12 @@ async function cargar() {
 $('#btnSemana').onclick = cargar;
 
 $('#btnGuardarSemana').onclick = async () => {
-  const resp = [0, 1].map(i => { const o = {}; document.querySelectorAll('#responsables input[data-i="' + i + '"]').forEach(x => o[x.dataset.f] = x.value.trim()); return o; })
-    .filter(o => o.grado_nombre);
-  const ss = [...document.querySelectorAll('#santoSena tr[data-fecha]')].map(tr => ({ fecha: tr.dataset.fecha,
-    santo: tr.querySelector('[data-f=santo]').value.trim(), sena: tr.querySelector('[data-f=sena]').value.trim() })).filter(s => s.santo || s.sena);
+  const resp = [], ss = [];
+  document.querySelectorAll('#dias .dia').forEach(d => {
+    const fecha = d.dataset.fecha, v = (el, f) => el.querySelector('[data-f=' + f + ']').value.trim();
+    if (v(d, 'santo') || v(d, 'sena')) ss.push({ fecha, santo: v(d, 'santo'), sena: v(d, 'sena') });
+    d.querySelectorAll('.resp').forEach(r => { if (v(r, 'grado_nombre')) resp.push({ fecha, grado_nombre: v(r, 'grado_nombre'), celular: v(r, 'celular'), pin: v(r, 'pin') }); });
+  });
   try { await llamar('guardarSemana', { semana: window.semana, responsables: resp, santoSena: ss }); aviso(msg, 'Semana guardada.', 'ok'); scrollTo(0, 0); }
   catch (e) { aviso(msg, e.message, 'err'); }
 };

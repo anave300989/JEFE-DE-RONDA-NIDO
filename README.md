@@ -1,6 +1,6 @@
 # Control del Jefe de Ronda – ESCONBOL
 
-Sistema para que el administrador asigne cada semana a los dos responsables de ronda y cargue el santo y seña de cada día. Cada responsable llena desde su celular la Lista de Verificación del Jefe de Ronda, con 4 fotografías y su firma. El sistema genera el PDF con el formato oficial. Solo el administrador puede descargar el PDF. El Cmdte y el 2do Cmdte reciben únicamente la confirmación de que se pasó ronda.
+Sistema para que el administrador cargue cada semana el rol de ronda: los dos Jefes de Ronda de cada día y su santo y seña. Cada responsable llena desde su celular la Lista de Verificación del Jefe de Ronda, con 4 fotografías y su firma. El sistema genera el PDF con el formato oficial. Solo el administrador puede descargar el PDF. El Cmdte y el 2do Cmdte reciben únicamente la confirmación de que se pasó ronda.
 
 ## Partes
 
@@ -32,7 +32,7 @@ El santo y seña, los celulares, las fotos y los PDF se guardan **solo en Google
 
 ## Uso semanal (administrador)
 1. Entra a `admin.html` con la contraseña.
-2. Carga los dos responsables (grado y nombre, celular y PIN de 4 dígitos) y el santo y seña de los 7 días. Presiona **Guardar semana**.
+2. En **Rol de ronda de la semana** carga, para cada día, los dos Jefes de Ronda (grado y nombre, celular y PIN) y el santo y seña. Presiona **Guardar semana**.
 3. Carga una vez los celulares del Cmdte y del 2do Cmdte.
 
 ## Cada día
