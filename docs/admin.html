@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Administración Jefe de Ronda</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <h1>Control del Jefe de Ronda · Administrador</h1>
+  <p>Escuela de Cóndores Bolivianos</p>
+</header>
+<main>
+  <div id="msg" class="msg hidden"></div>
+
+  <section id="vLogin" class="card">
+    <h2>Ingreso del administrador</h2>
+    <label for="pass">Contraseña</label>
+    <input id="pass" type="password" autocomplete="current-password">
+    <p></p>
+    <button id="btnLogin" class="full">Ingresar</button>
+  </section>
+
+  <div id="vPanel" class="hidden">
+    <div class="card">
+      <h2>Semana</h2>
+      <div class="row">
+        <input id="fechaSemana" type="date">
+        <button class="sec" id="btnSemana">Ver semana</button>
+      </div>
+      <p id="rangoSemana"></p>
+    </div>
+
+    <div class="card">
+      <h2>Responsables de ronda de la semana</h2>
+      <div id="responsables"></div>
+      <h2 style="margin-top:16px">Santo y seña por día</h2>
+      <table class="lista" id="santoSena"></table>
+      <p></p>
+      <button id="btnGuardarSemana" class="full">Guardar semana</button>
+    </div>
+
+    <div class="card">
+      <h2>Rondas de la semana</h2>
+      <p style="font-size:14px;color:var(--muted)">El sistema prepara los enlaces todos los días a las 08:00.</p>
+      <table class="lista" id="rondas"></table>
+      <p></p>
+      <button class="sec full" id="btnGenerar">Preparar los enlaces de hoy ahora</button>
+    </div>
+
+    <div class="card">
+      <h2>Historial de PDF</h2>
+      <div class="row">
+        <div><label for="desde">Desde</label><input id="desde" type="date"></div>
+        <div><label for="hasta">Hasta</label><input id="hasta" type="date"></div>
+      </div>
+      <p><button class="sec full" id="btnHist">Buscar</button></p>
+      <table class="lista" id="historial"></table>
+    </div>
+
+    <div class="card">
+      <h2>Comandantes (reciben la confirmación)</h2>
+      <div id="comandantes"></div>
+      <p></p>
+      <button class="sec full" id="btnGuardarCmd">Guardar comandantes</button>
+    </div>
+  </div>
+</main>
+
+<script src="config.js"></script>
+<script src="api.js"></script>
+<script>
+const msg = $('#msg');
+let sesion = sessionStorage.getItem('adm') || '';
+const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+async function llamar(accion, datos) {
+  try { return await api(accion, Object.assign({ sesion }, datos)); }
+  catch (e) {
+    if (e.message === 'SESION_VENCIDA') { sessionStorage.removeItem('adm'); location.reload(); }
+    throw e;
+  }
+}
+function hoyISO() { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); }
+function sumar(iso, n) { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+
+$('#btnLogin').onclick = async () => {
+  try {
+    sesion = (await api('login', { password: $('#pass').value })).sesion;
+    sessionStorage.setItem('adm', sesion);
+    entrar();
+  } catch (e) { aviso(msg, e.message, 'err'); }
+};
+$('#pass').onkeydown = e => { if (e.key === 'Enter') $('#btnLogin').click(); };
+
+function entrar() {
+  $('#vLogin').classList.add('hidden'); $('#vPanel').classList.remove('hidden');
+  $('#fechaSemana').value = hoyISO();
+  cargar();
+}
+
+async function cargar() {
+  msg.classList.add('hidden');
+  try {
+    const p = await llamar('panel', { fecha: $('#fechaSemana').value });
+    $('#rangoSemana').textContent = 'Del ' + p.semana + ' al ' + sumar(p.semana, 6);
+    window.semana = p.semana;
+    $('#responsables').innerHTML = [0, 1].map(i => { const r = p.responsables[i] || {}; return '<div class="row" style="margin-bottom:8px">' +
+      '<div><label>Responsable ' + (i + 1) + ' (grado y nombre)</label><input data-f="grado_nombre" data-i="' + i + '" value="' + esc(r.grado_nombre) + '"></div>' +
+      '<div><label>Celular</label><input data-f="celular" data-i="' + i + '" inputmode="tel" value="' + esc(r.celular) + '"></div>' +
+      '<div><label>PIN (4 dígitos)</label><input data-f="pin" data-i="' + i + '" inputmode="numeric" maxlength="6" value="' + esc(r.pin) + '"></div></div>'; }).join('');
+    $('#santoSena').innerHTML = '<tr><th>Día</th><th>Santo</th><th>Seña</th></tr>' + DIAS.map((d, i) => {
+      const f = sumar(p.semana, i), s = p.santoSena.find(x => x.fecha === f) || {};
+      return '<tr data-fecha="' + f + '"><td>' + d + '<br><small>' + f + '</small></td><td><input data-f="santo" value="' + esc(s.santo) + '"></td><td><input data-f="sena" value="' + esc(s.sena) + '"></td></tr>';
+    }).join('');
+    $('#comandantes').innerHTML = p.comandantes.map(c => '<div class="row" style="margin-bottom:8px" data-cargo="' + esc(c.cargo) + '">' +
+      '<div><label>' + esc(c.cargo) + ' (grado y nombre)</label><input data-f="grado_nombre" value="' + esc(c.grado_nombre) + '"></div>' +
+      '<div><label>Celular</label><input data-f="celular" inputmode="tel" value="' + esc(c.celular) + '"></div></div>').join('');
+    $('#rondas').innerHTML = p.rondas.length ? '<tr><th>Fecha</th><th>Jefe de Ronda</th><th>Estado</th><th></th></tr>' + p.rondas.map(r =>
+      '<tr><td>' + esc(r.fecha) + '</td><td>' + esc(r.grado_nombre) + '<br><small>' + (r.completado ? 'Enviada ' + esc(r.completado) : (r.enviado ? 'Enlace enviado ' + esc(r.enviado) : '')) + '</small></td>' +
+      '<td><span class="badge ' + esc(r.estado) + '">' + esc(r.estado) + '</span></td><td>' +
+      (r.tienePdf ? '<button class="sec" data-pdf="' + esc(r.id) + '">PDF</button>' : '<a class="btn sec" target="_blank" rel="noopener" href="' + esc(r.enlaceWa) + '">WhatsApp</a>') +
+      '</td></tr>').join('') : '<tr><td>Aún no hay rondas esta semana.</td></tr>';
+  } catch (e) { aviso(msg, e.message, 'err'); }
+}
+
+$('#btnSemana').onclick = cargar;
+
+$('#btnGuardarSemana').onclick = async () => {
+  const resp = [0, 1].map(i => { const o = {}; document.querySelectorAll('#responsables input[data-i="' + i + '"]').forEach(x => o[x.dataset.f] = x.value.trim()); return o; })
+    .filter(o => o.grado_nombre);
+  const ss = [...document.querySelectorAll('#santoSena tr[data-fecha]')].map(tr => ({ fecha: tr.dataset.fecha,
+    santo: tr.querySelector('[data-f=santo]').value.trim(), sena: tr.querySelector('[data-f=sena]').value.trim() })).filter(s => s.santo || s.sena);
+  try { await llamar('guardarSemana', { semana: window.semana, responsables: resp, santoSena: ss }); aviso(msg, 'Semana guardada.', 'ok'); scrollTo(0, 0); }
+  catch (e) { aviso(msg, e.message, 'err'); }
+};
+
+$('#btnGuardarCmd').onclick = async () => {
+  const cmd = [...document.querySelectorAll('#comandantes [data-cargo]')].map(d => ({ cargo: d.dataset.cargo,
+    grado_nombre: d.querySelector('[data-f=grado_nombre]').value.trim(), celular: d.querySelector('[data-f=celular]').value.trim() }));
+  try { await llamar('guardarComandantes', { comandantes: cmd }); aviso(msg, 'Comandantes guardados.', 'ok'); scrollTo(0, 0); }
+  catch (e) { aviso(msg, e.message, 'err'); }
+};
+
+$('#btnGenerar').onclick = async () => {
+  try { await llamar('generarHoy', {}); await cargar(); aviso(msg, 'Enlaces de hoy preparados.', 'ok'); }
+  catch (e) { aviso(msg, e.message, 'err'); }
+};
+
+$('#btnHist').onclick = async () => {
+  try {
+    const h = await llamar('historial', { desde: $('#desde').value, hasta: $('#hasta').value });
+    $('#historial').innerHTML = h.length ? '<tr><th>Fecha</th><th>Jefe de Ronda</th><th></th></tr>' + h.map(r =>
+      '<tr><td>' + esc(r.fecha) + '</td><td>' + esc(r.grado_nombre) + '</td><td><button class="sec" data-pdf="' + esc(r.id) + '">PDF</button></td></tr>').join('')
+      : '<tr><td>No hay listas en ese rango.</td></tr>';
+  } catch (e) { aviso(msg, e.message, 'err'); }
+};
+
+document.addEventListener('click', async e => {
+  const id = e.target.dataset && e.target.dataset.pdf;
+  if (!id) return;
+  e.target.disabled = true;
+  try {
+    const f = await llamar('pdf', { id });
+    const bytes = Uint8Array.from(atob(f.base64), c => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    const a = document.createElement('a'); a.href = url; a.download = f.nombre; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch (err) { aviso(msg, err.message, 'err'); }
+  e.target.disabled = false;
+});
+
+if (sesion) entrar();
+</script>
+</body>
+</html>

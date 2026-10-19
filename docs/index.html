@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Lista de Verificación del Jefe de Ronda</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <h1>Lista de Verificación del Jefe de Ronda</h1>
+  <p>Escuela de Cóndores Bolivianos</p>
+</header>
+<main>
+  <div id="msg" class="msg hidden"></div>
+
+  <section id="vPin" class="card hidden">
+    <h2>Ingreso</h2>
+    <label for="pin">PIN personal</label>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off">
+    <p></p>
+    <button id="btnPin" class="full">Ingresar</button>
+  </section>
+
+  <form id="vForm" class="hidden">
+    <div class="card">
+      <h2>Datos de la ronda</h2>
+      <p id="datos"></p>
+      <p class="msg">Marque <b>SI</b> o <b>NO</b> en cada punto. Las observaciones son opcionales.</p>
+    </div>
+    <div class="progreso" id="progreso"></div>
+    <div id="secciones"></div>
+
+    <div class="card">
+      <h2>Firmas en la prevención</h2>
+      <label for="capitan">Capitán de Servicio (grado y nombre)</label><input id="capitan">
+      <label for="cmdteGuardia">Comandante de Guardia (grado y nombre)</label><input id="cmdteGuardia">
+      <label for="oficialPatrullas">Oficial de Patrullas (grado y nombre)</label><input id="oficialPatrullas">
+      <label for="novedades">Otras novedades sobresalientes</label><textarea id="novedades"></textarea>
+    </div>
+
+    <div class="card">
+      <h2>Fotografías (4 obligatorias)</h2>
+      <div class="fotos" id="fotos"></div>
+    </div>
+
+    <div class="card">
+      <h2>Firma del Jefe de Ronda</h2>
+      <canvas id="firma" class="firma"></canvas>
+      <p><button type="button" class="sec" id="borrarFirma">Borrar firma</button></p>
+    </div>
+
+    <button type="submit" id="btnEnviar" class="full">Enviar lista de verificación</button>
+    <p></p>
+  </form>
+
+  <section id="vFin" class="card hidden">
+    <h2>Lista enviada</h2>
+    <p>La lista de verificación quedó registrada. Gracias.</p>
+    <div id="avisos"></div>
+  </section>
+</main>
+
+<script src="config.js"></script>
+<script src="api.js"></script>
+<script>
+const token = new URLSearchParams(location.search).get('t');
+const msg = $('#msg');
+let lista = [], pin = '';
+const fotos = [null, null, null, null];
+const BORRADOR = 'ronda_' + token;
+
+if (!token) aviso(msg, 'Enlace no válido. Use el enlace que recibió por WhatsApp.', 'err');
+else $('#vPin').classList.remove('hidden');
+
+$('#btnPin').onclick = async () => {
+  pin = $('#pin').value.trim();
+  $('#btnPin').disabled = true;
+  try {
+    const r = await api('abrir', { token, pin });
+    if (r.estado === 'COMPLETADO') { $('#vPin').classList.add('hidden'); aviso(msg, 'Esta lista ya fue enviada.', 'ok'); return; }
+    lista = r.lista;
+    $('#datos').innerHTML = '<b>' + esc(r.grado_nombre) + '</b><br>Fecha: ' + esc(r.fecha);
+    pintar();
+    $('#vPin').classList.add('hidden'); msg.classList.add('hidden');
+    $('#vForm').classList.remove('hidden');
+    iniciarFirma();
+  } catch (e) { aviso(msg, e.message, 'err'); }
+  $('#btnPin').disabled = false;
+};
+
+function pintar() {
+  const b = cargarBorrador();
+  $('#secciones').innerHTML = lista.map((s, i) => '<div class="card"><h2>' + esc(s.titulo) + '</h2>' +
+    s.items.map((t, j) => { const k = i + '-' + j; return '<div class="item"><p>' + (j + 1) + '. ' + esc(t) + '</p>' +
+      '<div class="sn"><label><input type="radio" name="r' + k + '" value="SI"' + (b.r[k] === 'SI' ? ' checked' : '') + '><span>SI</span></label>' +
+      '<label><input type="radio" name="r' + k + '" value="NO"' + (b.r[k] === 'NO' ? ' checked' : '') + '><span>NO</span></label></div>' +
+      '<input class="obs" data-k="' + k + '" placeholder="Observación" value="' + esc(b.o[k] || '') + '"></div>'; }).join('') + '</div>').join('');
+  ['capitan', 'cmdteGuardia', 'oficialPatrullas', 'novedades'].forEach(id => $('#' + id).value = b[id] || '');
+  $('#fotos').innerHTML = [0, 1, 2, 3].map(i => '<div class="foto"><label style="margin:0;color:inherit"><img id="img' + i + '" class="hidden" alt="">' +
+    '<span id="txt' + i + '">📷 Tomar foto ' + (i + 1) + '</span><input type="file" accept="image/*" capture="environment" data-i="' + i + '"></label>' +
+    '<input class="obs" id="ley' + i + '" placeholder="Lugar de la foto"></div>').join('');
+  document.querySelectorAll('#fotos input[type=file]').forEach(inp => inp.onchange = () => leerFoto(inp));
+  $('#vForm').addEventListener('change', () => { guardarBorrador(); progreso(); });
+  $('#vForm').addEventListener('input', guardarBorrador);
+  progreso();
+}
+
+function respuestas() {
+  const r = {}, o = {};
+  document.querySelectorAll('.sn input:checked').forEach(x => r[x.name.slice(1)] = x.value);
+  document.querySelectorAll('#secciones .obs').forEach(x => { if (x.value.trim()) o[x.dataset.k] = x.value.trim(); });
+  return { r, o };
+}
+function total() { return lista.reduce((s, x) => s + x.items.length, 0); }
+function progreso() {
+  const n = Object.keys(respuestas().r).length;
+  $('#progreso').textContent = 'Puntos marcados: ' + n + ' de ' + total() + ' · Fotos: ' + fotos.filter(Boolean).length + ' de 4';
+}
+function guardarBorrador() {
+  const x = respuestas();
+  const b = { r: x.r, o: x.o };
+  ['capitan', 'cmdteGuardia', 'oficialPatrullas', 'novedades'].forEach(id => b[id] = $('#' + id).value);
+  try { localStorage.setItem(BORRADOR, JSON.stringify(b)); } catch (e) {}
+}
+function cargarBorrador() {
+  try { return JSON.parse(localStorage.getItem(BORRADOR)) || { r: {}, o: {} }; } catch (e) { return { r: {}, o: {} }; }
+}
+
+function leerFoto(inp) {
+  const f = inp.files[0], i = +inp.dataset.i;
+  if (!f) return;
+  const img = new Image();
+  img.onload = () => {
+    const max = 1280, s = Math.min(1, max / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    fotos[i] = c.toDataURL('image/jpeg', 0.7);
+    $('#img' + i).src = fotos[i]; $('#img' + i).classList.remove('hidden');
+    $('#txt' + i).textContent = 'Cambiar foto ' + (i + 1);
+    URL.revokeObjectURL(img.src);
+    progreso();
+  };
+  img.src = URL.createObjectURL(f);
+}
+
+let firmado = false;
+function iniciarFirma() {
+  const c = $('#firma'), ctx = c.getContext('2d');
+  const r = c.getBoundingClientRect();
+  c.width = r.width * 2; c.height = r.height * 2;
+  ctx.scale(2, 2); ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.strokeStyle = '#0b2a6b';
+  let on = false;
+  const p = e => { const b = c.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; };
+  c.onpointerdown = e => { on = true; c.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.moveTo(...p(e)); };
+  c.onpointermove = e => { if (!on) return; ctx.lineTo(...p(e)); ctx.stroke(); firmado = true; };
+  c.onpointerup = c.onpointercancel = () => on = false;
+  $('#borrarFirma').onclick = () => { ctx.clearRect(0, 0, c.width, c.height); firmado = false; };
+}
+
+$('#vForm').onsubmit = async e => {
+  e.preventDefault();
+  const x = respuestas();
+  const faltan = total() - Object.keys(x.r).length;
+  if (faltan) return aviso(msg, 'Faltan ' + faltan + ' puntos por marcar con SI o NO.', 'err'), scrollTo(0, 0);
+  if (fotos.some(f => !f)) return aviso(msg, 'Debe tomar las 4 fotografías.', 'err'), scrollTo(0, 0);
+  if (!firmado) return aviso(msg, 'Falta su firma.', 'err'), scrollTo(0, 0);
+  if (!confirm('¿Enviar la lista de verificación? Ya no podrá modificarla.')) return;
+  const btn = $('#btnEnviar'); btn.disabled = true; btn.textContent = 'Enviando…';
+  try {
+    const r = await api('enviar', { token, pin, datos: {
+      respuestas: x.r, obs: x.o, fotos, firma: $('#firma').toDataURL('image/png'),
+      leyendas: [0, 1, 2, 3].map(i => $('#ley' + i).value.trim()),
+      capitan: $('#capitan').value.trim(), cmdteGuardia: $('#cmdteGuardia').value.trim(),
+      oficialPatrullas: $('#oficialPatrullas').value.trim(), novedades: $('#novedades').value.trim() } });
+    try { localStorage.removeItem(BORRADOR); } catch (e) {}
+    $('#vForm').classList.add('hidden'); msg.classList.add('hidden');
+    $('#avisos').innerHTML = r.avisos.length ? '<p>Envíe la confirmación al Comando:</p>' + r.avisos.map(a =>
+      '<p><a class="btn full" target="_blank" rel="noopener" href="' + esc(a.enlace) + '">Avisar por WhatsApp al ' + esc(a.cargo) + '</a></p>').join('') : '';
+    $('#vFin').classList.remove('hidden'); scrollTo(0, 0);
+  } catch (err) {
+    aviso(msg, err.message, 'err'); scrollTo(0, 0);
+    btn.disabled = false; btn.textContent = 'Enviar lista de verificación';
+  }
+};
+</script>
+</body>
+</html>

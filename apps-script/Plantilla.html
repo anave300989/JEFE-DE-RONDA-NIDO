@@ -1,0 +1,91 @@
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: letter; margin: 1.5cm 1.8cm; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #000; }
+  .enc { font-weight: bold; text-align: left; line-height: 1.3; }
+  .enc div { width: 7.5cm; text-align: center; }
+  .fecha { text-align: right; margin: 4px 0; }
+  h1 { text-align: center; font-size: 14pt; margin: 6px 0 8px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+  td, th { border: 1px solid #000; padding: 2px 4px; vertical-align: middle; }
+  th { font-weight: bold; text-align: center; }
+  .n { width: 0.8cm; text-align: left; vertical-align: top; }
+  .sn { width: 0.9cm; text-align: center; font-size: 12pt; font-weight: bold; }
+  .obs { width: 3.2cm; font-size: 8pt; }
+  .item { text-align: justify; }
+  .firmas td { height: 0.9cm; }
+  .lbl { font-weight: bold; width: 3cm; }
+  .nota { margin-top: 8px; text-align: justify; }
+  .fotos td { border: 1px solid #000; text-align: center; width: 50%; padding: 4px; }
+  .fotos img { max-width: 8cm; max-height: 9cm; }
+  .salto { page-break-before: always; }
+</style>
+</head>
+<body>
+  <div class="enc">
+    <div>COMANDO DE UNIDADES DEPENDIENTES DEL EJÉRCITO</div>
+    <div>ESCUELA DE CÓNDORES BOLIVIANOS</div>
+    <div>"GRAL. EJTO. OSCAR ESCOBAR QUIROGA"</div>
+    <div><u>BOLIVIA</u></div>
+  </div>
+  <div class="fecha">Fecha <u>&nbsp;<?= dia ?>&nbsp;</u> de <u>&nbsp;<?= mes ?>&nbsp;</u> de <?= anio ?>.</div>
+  <h1>LISTA DE VERIFICACIÓN DEL JEFE DE RONDA</h1>
+
+  <? for (var i = 0; i < lista.length; i++) { var sec = lista[i]; ?>
+  <table>
+    <tr><th class="n">N°</th><th><?= sec.titulo ?></th><th class="sn">SI</th><th class="sn">NO</th><th class="obs">OBSERVACIONES</th></tr>
+    <? for (var j = 0; j < sec.items.length; j++) { var k = i + '-' + j; var v = d.respuestas[k]; ?>
+    <tr>
+      <td class="n"><?= j + 1 ?>.</td>
+      <td class="item"><?= sec.items[j] ?></td>
+      <td class="sn"><?= v === 'SI' ? '✓' : '' ?></td>
+      <td class="sn"><?= v === 'NO' ? '✓' : '' ?></td>
+      <td class="obs"><?= (d.obs && d.obs[k]) || '' ?></td>
+    </tr>
+    <? } ?>
+  </table>
+  <? } ?>
+
+  <table class="firmas">
+    <tr><td class="lbl">CAPITÁN DE SERVICIO</td><td><?= d.capitan || '' ?></td><td class="lbl" style="width:1.5cm">FIRMA</td><td style="width:3.5cm"></td></tr>
+    <tr><td class="lbl">COMANDANTE DE GUARDIA</td><td><?= d.cmdteGuardia || '' ?></td><td class="lbl">FIRMA</td><td></td></tr>
+    <tr><td class="lbl">OFICIAL DE PATRULLAS</td><td><?= d.oficialPatrullas || '' ?></td><td class="lbl">FIRMA</td><td></td></tr>
+  </table>
+
+  <p><b>Otras novedades sobresalientes:</b> <?= d.novedades || '' ?></p>
+
+  <p class="nota"><b>Nota :</b> La presente lista de verificación de las instalaciones, deberá ser comprobada y llenada por el Oficial Jefe de Ronda, a partir de las 22:00 hasta las 05:00 con uniforme reglamentario, anotando las novedades para conocimiento del Comando.</p>
+
+  <table style="border:none; margin-top:14px">
+    <tr>
+      <td style="border:none; text-align:center; width:50%; vertical-align:bottom">
+        <div style="font-weight:bold"><?= r.grado_nombre ?></div>
+        <div>______________________________</div>
+        <div style="font-weight:bold">GRADO, NOMBRES Y APELLIDOS DEL JEFE DE RONDA</div>
+      </td>
+      <td style="border:none; text-align:center; vertical-align:bottom">
+        <img src="<?!= d.firma ?>" style="height:1.8cm">
+        <div>______________________________</div>
+        <div style="font-weight:bold">FIRMA DEL JEFE DE RONDA</div>
+      </td>
+    </tr>
+  </table>
+  <p style="font-size:7pt; text-align:right">Registrado en el sistema: <?= r.completado ?></p>
+
+  <div class="salto">
+    <h1>ANEXO FOTOGRÁFICO</h1>
+    <p style="text-align:center">Ronda del <?= dia ?> de <?= mes ?> de <?= anio ?> &ndash; <?= r.grado_nombre ?></p>
+    <table class="fotos">
+      <? for (var f = 0; f < 4; f += 2) { ?>
+      <tr>
+        <? for (var g = f; g < f + 2; g++) { ?>
+        <td><img src="<?!= d.fotos[g] ?>"><div><b>Foto <?= g + 1 ?>:</b> <?= (d.leyendas && d.leyendas[g]) || '' ?></div></td>
+        <? } ?>
+      </tr>
+      <? } ?>
+    </table>
+  </div>
+</body>
+</html>
