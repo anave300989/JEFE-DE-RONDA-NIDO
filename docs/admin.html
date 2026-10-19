@@ -121,7 +121,7 @@ async function cargar() {
     $('#comandantes').innerHTML = p.comandantes.map(c => '<div class="row" style="margin-bottom:8px" data-cargo="' + esc(c.cargo) + '">' +
       '<div><label>' + esc(c.cargo) + ' (grado y nombre)</label><input data-f="grado_nombre" value="' + esc(c.grado_nombre) + '"></div>' +
       '<div><label>Celular</label><input data-f="celular" inputmode="tel" value="' + esc(c.celular) + '"></div>' +
-      '<div><label>Clave CallMeBot</label><input data-f="clave_callmebot" value="' + esc(c.clave_callmebot) + '"></div></div>').join('');
+      '<input type="hidden" data-f="clave_callmebot" value="' + esc(c.clave_callmebot) + '"></div>').join('');
     $('#rondas').innerHTML = p.rondas.length ? '<tr><th>Fecha</th><th>Jefe de Ronda</th><th>Estado</th><th></th></tr>' + p.rondas.map(r =>
       '<tr><td>' + esc(r.fecha) + '</td><td>' + esc(r.grado_nombre) + '<br><small>' + (r.completado ? 'Enviada ' + esc(r.completado) : (r.enviado ? 'Enlace enviado ' + esc(r.enviado) : '')) + '</small></td>' +
       '<td><span class="badge ' + esc(r.estado) + '">' + esc(r.estado) + '</span></td><td>' +
