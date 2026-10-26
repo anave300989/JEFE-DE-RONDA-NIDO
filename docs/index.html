@@ -69,26 +69,73 @@ const token = new URLSearchParams(location.search).get('t');
 const msg = $('#msg');
 let lista = [], pin = '';
 const fotos = [null, null, null, null];
-const BORRADOR = 'ronda_' + token;
+const BORRADOR = 'ronda_' + token, PIN_GUARDADO = 'pin_' + token;
+
+// Las fotos se guardan en el celular (IndexedDB) para no perderlas si el navegador cierra la página.
+const almacen = {
+  db: null,
+  abrir() {
+    if (this.db) return Promise.resolve(this.db);
+    return new Promise((ok, mal) => {
+      const r = indexedDB.open('jefe_ronda', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('datos');
+      r.onsuccess = () => ok(this.db = r.result);
+      r.onerror = () => mal(r.error);
+    });
+  },
+  async poner(clave, valor) {
+    try { const db = await this.abrir(); db.transaction('datos', 'readwrite').objectStore('datos').put(valor, token + ':' + clave); } catch (e) {}
+  },
+  async leer(clave) {
+    try {
+      const db = await this.abrir();
+      return await new Promise(ok => { const r = db.transaction('datos').objectStore('datos').get(token + ':' + clave); r.onsuccess = () => ok(r.result); r.onerror = () => ok(null); });
+    } catch (e) { return null; }
+  },
+  async borrar() {
+    try { const db = await this.abrir(); const st = db.transaction('datos', 'readwrite').objectStore('datos');
+      ['f0', 'f1', 'f2', 'f3'].forEach(k => st.delete(token + ':' + k)); } catch (e) {}
+  }
+};
 
 if (!token) aviso(msg, 'Enlace no válido. Use el enlace que recibió por WhatsApp.', 'err');
-else $('#vPin').classList.remove('hidden');
+else {
+  // El PIN se pide una sola vez; luego queda recordado en el celular para este enlace.
+  let guardado = '';
+  try { guardado = localStorage.getItem(PIN_GUARDADO) || ''; } catch (e) {}
+  if (guardado) entrar(guardado, true); else $('#vPin').classList.remove('hidden');
+}
 
-$('#btnPin').onclick = async () => {
-  pin = $('#pin').value.trim();
+$('#btnPin').onclick = () => entrar($('#pin').value.trim(), false);
+
+async function entrar(p, automatico) {
+  pin = p;
   $('#btnPin').disabled = true;
   try {
     const r = await api('abrir', { token, pin });
     if (r.estado === 'COMPLETADO') { $('#vPin').classList.add('hidden'); aviso(msg, 'Esta lista ya fue enviada.', 'ok'); return; }
+    try { localStorage.setItem(PIN_GUARDADO, pin); } catch (e) {}
     lista = r.lista;
     $('#datos').innerHTML = '<b>' + esc(r.grado_nombre) + '</b><br>Fecha: ' + esc(r.fecha);
     pintar();
     $('#vPin').classList.add('hidden'); msg.classList.add('hidden');
     $('#vForm').classList.remove('hidden');
     iniciarFirma();
-  } catch (e) { aviso(msg, e.message, 'err'); }
+    await restaurarArchivos();
+  } catch (e) {
+    if (automatico) { try { localStorage.removeItem(PIN_GUARDADO); } catch (x) {} $('#vPin').classList.remove('hidden'); }
+    aviso(msg, e.message, 'err');
+  }
   $('#btnPin').disabled = false;
-};
+}
+
+async function restaurarArchivos() {
+  for (let i = 0; i < 4; i++) {
+    const f = await almacen.leer('f' + i);
+    if (f) mostrarFoto(i, f);
+  }
+  progreso();
+}
 
 function pintar() {
   const b = cargarBorrador();
@@ -100,7 +147,7 @@ function pintar() {
   ['capitan', 'cmdteGuardia', 'oficialPatrullas', 'novedades'].forEach(id => $('#' + id).value = b[id] || '');
   $('#fotos').innerHTML = [0, 1, 2, 3].map(i => '<div class="foto"><label style="margin:0;color:inherit"><img id="img' + i + '" class="hidden" alt="">' +
     '<span id="txt' + i + '">📷 Tomar foto ' + (i + 1) + '</span><input type="file" accept="image/*" capture="environment" data-i="' + i + '"></label>' +
-    '<input class="obs" id="ley' + i + '" placeholder="Lugar de la foto"></div>').join('');
+    '<input class="obs" id="ley' + i + '" placeholder="Lugar de la foto" value="' + esc((b.ley || [])[i] || '') + '"></div>').join('');
   document.querySelectorAll('#fotos input[type=file]').forEach(inp => inp.onchange = () => leerFoto(inp));
   $('#vForm').addEventListener('change', () => { guardarBorrador(); progreso(); });
   $('#vForm').addEventListener('input', guardarBorrador);
@@ -122,6 +169,7 @@ function guardarBorrador() {
   const x = respuestas();
   const b = { r: x.r, o: x.o };
   ['capitan', 'cmdteGuardia', 'oficialPatrullas', 'novedades'].forEach(id => b[id] = $('#' + id).value);
+  b.ley = [0, 1, 2, 3].map(i => $('#ley' + i).value);
   try { localStorage.setItem(BORRADOR, JSON.stringify(b)); } catch (e) {}
 }
 function cargarBorrador() {
@@ -137,13 +185,18 @@ function leerFoto(inp) {
     const c = document.createElement('canvas');
     c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    fotos[i] = c.toDataURL('image/jpeg', 0.7);
-    $('#img' + i).src = fotos[i]; $('#img' + i).classList.remove('hidden');
-    $('#txt' + i).textContent = 'Cambiar foto ' + (i + 1);
+    mostrarFoto(i, c.toDataURL('image/jpeg', 0.7));
+    almacen.poner('f' + i, fotos[i]);
     URL.revokeObjectURL(img.src);
     progreso();
   };
   img.src = URL.createObjectURL(f);
+}
+
+function mostrarFoto(i, dato) {
+  fotos[i] = dato;
+  $('#img' + i).src = dato; $('#img' + i).classList.remove('hidden');
+  $('#txt' + i).textContent = 'Cambiar foto ' + (i + 1);
 }
 
 let firmado = false;
@@ -175,7 +228,8 @@ $('#vForm').onsubmit = async e => {
       leyendas: [0, 1, 2, 3].map(i => $('#ley' + i).value.trim()),
       capitan: $('#capitan').value.trim(), cmdteGuardia: $('#cmdteGuardia').value.trim(),
       oficialPatrullas: $('#oficialPatrullas').value.trim(), novedades: $('#novedades').value.trim() } });
-    try { localStorage.removeItem(BORRADOR); } catch (e) {}
+    try { localStorage.removeItem(BORRADOR); localStorage.removeItem(PIN_GUARDADO); } catch (e) {}
+    almacen.borrar();
     $('#vForm').classList.add('hidden'); msg.classList.add('hidden');
     $('#avisos').innerHTML = r.avisos.length ? '<p>Envíe la confirmación al Comando:</p>' + r.avisos.map(a =>
       '<p><a class="btn full" target="_blank" rel="noopener" href="' + esc(a.enlace) + '">Avisar por WhatsApp al ' + esc(a.cargo) + '</a></p>').join('')
