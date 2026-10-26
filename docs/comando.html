@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Guardia y Rondas · Comando</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .dia { margin-bottom: 14px; }
+  .dia > summary { cursor: pointer; font-weight: 700; padding: 12px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; list-style: none; display: flex; justify-content: space-between; gap: 8px; }
+  .dia[open] > summary { border-radius: 10px 10px 0 0; }
+  .dia .cuerpo { background: var(--card); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 10px 10px; padding: 12px 14px; }
+  .estado { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+  .e-PASO { background: #e3f3e4; color: var(--si); }
+  .e-NO { background: #fde3e1; color: var(--no); }
+  .e-PEND { background: var(--warn); color: #7a5a00; }
+  h3 { font-size: 14px; margin: 14px 0 6px; color: var(--pri); text-transform: uppercase; }
+  table.g { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.g th, table.g td { border: 1px solid var(--line); padding: 6px 4px; text-align: center; }
+  table.g td:first-child, table.g th:first-child { text-align: left; }
+  table.g button { padding: 4px 8px; font-size: 13px; }
+  .cero { color: var(--no); font-weight: 700; }
+  #visor { position: fixed; inset: 0; background: rgba(0,0,0,.92); z-index: 10; overflow: auto; padding: 16px; color: #fff; }
+  #visor img { width: 100%; max-width: 760px; display: block; margin: 0 auto 6px; border-radius: 6px; }
+  #visor p { max-width: 760px; margin: 0 auto 18px; font-size: 14px; }
+  #visor .cerrar { position: sticky; top: 0; display: block; margin: 0 0 12px auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Guardia y Rondas · Comando</h1>
+  <p>Escuela de Cóndores Bolivianos · Solo consulta</p>
+</header>
+<main>
+  <div id="msg" class="msg hidden"></div>
+  <section id="vPin" class="card hidden">
+    <h2>Ingreso</h2>
+    <label for="pin">PIN</label>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off">
+    <p></p>
+    <button id="btnPin" class="full">Ingresar</button>
+  </section>
+  <div id="vSemana" class="hidden">
+    <div class="card"><h2 id="titulo"></h2><p id="resumen" style="margin:0"></p></div>
+    <div id="dias"></div>
+  </div>
+</main>
+<div id="visor" class="hidden"><button class="sec cerrar" id="cerrarVisor">Cerrar</button><div id="visorFotos"></div></div>
+
+<script src="config.js"></script>
+<script src="api.js"></script>
+<script>
+const token = new URLSearchParams(location.search).get('t');
+const msg = $('#msg');
+const PIN_GUARDADO = 'cpin_' + token;
+const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+let pin = '', datos = null;
+
+if (!token) aviso(msg, 'Enlace no válido.', 'err');
+else {
+  let guardado = '';
+  try { guardado = localStorage.getItem(PIN_GUARDADO) || ''; } catch (e) {}
+  if (guardado) entrar(guardado, true); else $('#vPin').classList.remove('hidden');
+}
+$('#btnPin').onclick = () => entrar($('#pin').value.trim(), false);
+
+async function entrar(p, automatico) {
+  pin = p;
+  $('#btnPin').disabled = true;
+  try {
+    datos = await api('comandoAbrir', { token, pin });
+    try { localStorage.setItem(PIN_GUARDADO, pin); } catch (e) {}
+    $('#vPin').classList.add('hidden'); msg.classList.add('hidden');
+    pintar();
+    $('#vSemana').classList.remove('hidden');
+  } catch (e) {
+    if (automatico) { try { localStorage.removeItem(PIN_GUARDADO); } catch (x) {} $('#vPin').classList.remove('hidden'); }
+    aviso(msg, e.message, 'err');
+  }
+  $('#btnPin').disabled = false;
+}
+
+const f = s => s.split('-').reverse().join('/');
+function clase(e) { return e === 'PASÓ RONDA' ? 'PASO' : e === 'PENDIENTE' ? 'PEND' : 'NO'; }
+
+function pintar() {
+  $('#titulo').textContent = 'Semana del ' + f(datos.semana) + ' al ' + f(datos.fin);
+  let pasadas = 0, total = 0, fotos = 0;
+  datos.dias.forEach(d => { d.rondas.forEach(r => { if (r.estado !== 'PENDIENTE') { total++; if (r.estado === 'PASÓ RONDA') pasadas++; } }); d.guardia.forEach(x => fotos += x.fotos.length); });
+  $('#resumen').innerHTML = 'Rondas registradas: <b>' + pasadas + ' de ' + total + '</b> · Fotos de guardia: <b>' + fotos + '</b>';
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/La_Paz' }).format(new Date());
+  $('#dias').innerHTML = datos.dias.map((d, i) => {
+    const malas = d.rondas.filter(r => r.estado === 'NO PASÓ RONDA').length;
+    const etiqueta = !d.rondas.length ? '' : malas ? '<span class="estado e-NO">' + malas + ' sin ronda</span>' :
+      d.rondas.every(r => r.estado === 'PASÓ RONDA') ? '<span class="estado e-PASO">Rondas OK</span>' : '<span class="estado e-PEND">Pendiente</span>';
+    return '<details class="dia"' + (d.fecha === hoy ? ' open' : '') + '><summary><span>' + DIAS[i] + ' ' + f(d.fecha) + '</span>' + etiqueta + '</summary><div class="cuerpo">' +
+      '<h3>Jefes de Ronda</h3>' + (d.rondas.length ? d.rondas.map(r => '<p style="margin:4px 0">' + esc(r.grado_nombre) + ' <span class="estado e-' + clase(r.estado) + '">' + esc(r.estado) + '</span>' +
+        (r.completado ? ' <small>' + esc(r.completado.slice(11)) + '</small>' : '') + '</p>').join('') : '<p style="margin:4px 0;color:var(--muted)">Sin designar.</p>') +
+      d.guardia.map((g, gi) => '<h3>' + esc(g.cargoNombre) + '</h3><p style="margin:0 0 6px">' + (esc(g.grado_nombre) || '<span style="color:var(--muted)">Sin designar</span>') + '</p>' +
+        '<div style="overflow-x:auto"><table class="g"><tr><th>Lugar</th>' + datos.turnos.map(t => '<th>' + esc(t.nombre) + '</th>').join('') + '</tr>' +
+        g.lugares.map(l => '<tr><td>' + esc(l) + '</td>' + datos.turnos.map(t => {
+          const n = g.fotos.filter(x => x.turno === t.id && x.lugar === l).length;
+          return '<td>' + (n ? '<button class="sec" data-d="' + i + '" data-g="' + gi + '" data-t="' + t.id + '" data-l="' + esc(l) + '">' + n + ' 📷</button>' : '<span class="cero">0</span>') + '</td>';
+        }).join('') + '</tr>').join('') + '</table></div>').join('') +
+      '</div></details>';
+  }).join('');
+}
+
+document.addEventListener('click', async e => {
+  const b = e.target.closest('button[data-t]');
+  if (!b) return;
+  const d = datos.dias[+b.dataset.d], g = d.guardia[+b.dataset.g], t = datos.turnos.find(x => x.id === b.dataset.t);
+  const lista = g.fotos.filter(x => x.turno === t.id && x.lugar === b.dataset.l).sort((a, c) => a.hora < c.hora ? -1 : 1);
+  $('#visorFotos').innerHTML = '<h2 style="max-width:760px;margin:0 auto 12px">' + esc(b.dataset.l) + ' · ' + esc(t.nombre) + ' · ' + f(d.fecha) + '</h2>' +
+    lista.map(x => '<img id="img_' + x.id + '" alt=""><p>Tomada: ' + esc(x.hora.slice(11)) +
+      (x.recibida && x.recibida.slice(0, 16) !== x.hora.slice(0, 16) ? ' · recibida ' + esc(x.recibida.slice(11)) : '') + '</p>').join('');
+  $('#visor').classList.remove('hidden');
+  for (const x of lista) {
+    try { const r = await api('comandoFoto', { token, pin, id: x.id }); const im = $('#img_' + x.id); if (im) im.src = 'data:image/jpeg;base64,' + r.base64; } catch (err) {}
+  }
+});
+$('#cerrarVisor').onclick = () => $('#visor').classList.add('hidden');
+</script>
+</body>
+</html>

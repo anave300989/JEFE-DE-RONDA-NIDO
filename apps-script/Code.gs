@@ -80,7 +80,10 @@ const HOJAS = {
   Responsables: ['fecha', 'grado_nombre', 'celular', 'pin'],
   SantoSena: ['fecha', 'santo', 'sena'],
   Comandantes: ['cargo', 'grado_nombre', 'celular', 'clave_callmebot'],
-  Rondas: ['id', 'fecha', 'grado_nombre', 'celular', 'token', 'estado', 'enviado', 'completado', 'pdf_id', 'fotos', 'novedades']
+  Rondas: ['id', 'fecha', 'grado_nombre', 'celular', 'token', 'estado', 'enviado', 'completado', 'pdf_id', 'fotos', 'novedades'],
+  GuardiaRol: ['fecha', 'cargo', 'grado_nombre', 'celular', 'pin', 'token'],
+  GuardiaFotos: ['id', 'fecha', 'cargo', 'turno', 'lugar', 'hora', 'recibida', 'archivo_id', 'grado_nombre'],
+  EnlacesComando: ['semana', 'token', 'pin']
 };
 
 /* ---------- Instalación ---------- */
@@ -121,7 +124,12 @@ function carpeta_(sub) {
 /* ---------- Utilidades de hojas ---------- */
 
 function hoja_(n) {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(n);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(n);
+  if (!sh) {
+    sh = ss.insertSheet(n);
+    sh.getRange('A:Z').setNumberFormat('@');
+  }
   const cols = HOJAS[n].length;
   const enc = sh.getRange(1, 1, 1, cols).getDisplayValues()[0];
   if (enc.join() !== HOJAS[n].join()) sh.getRange(1, 1, 1, cols).setValues([HOJAS[n]]);
@@ -392,4 +400,168 @@ function probarPdf() {
               oficialPatrullas: 'Tte. Ejemplo', fotos: [pix, pix, pix, pix], leyendas: ['Prevención', 'Polvorines', 'Cocinas', 'Talleres'], firma: pix };
   const f = generarPdf_({ fecha: hoy_(), grado_nombre: 'Tte. Prueba', completado: ahora_() }, d, carpeta_('pruebas'));
   Logger.log(f.getUrl());
+}
+
+/* ---------- Guardia: Capitán de Servicio y Oficial de Patrulla ---------- */
+
+const CARGOS_GUARDIA = {
+  CAPITAN: { nombre: 'CAPITÁN DE SERVICIO', lugares: ['Polvorín', 'Material Bélico', 'Comando', 'Plana Mayor', 'Perezosos', 'Transportes'] },
+  PATRULLA: { nombre: 'OFICIAL DE PATRULLA', lugares: ['Fuerte 1', 'Fuerte 2', 'Campo Salado', 'Confital', 'Granja 1', 'Barrio Chino'] }
+};
+
+// Turno de 24 h: de 07:00 a 07:00 del día siguiente.
+const TURNOS = [
+  { id: 'MANANA', nombre: 'Mañana', horario: '07:00 a 13:00' },
+  { id: 'TARDE', nombre: 'Tarde', horario: '13:00 a 19:00' },
+  { id: 'NOCHE', nombre: 'Noche', horario: '19:00 a 01:00' },
+  { id: 'MADRUGADA', nombre: 'Madrugada', horario: '01:00 a 07:00' }
+];
+
+/** Fecha de guardia y turno que corresponden a un instante (en hora de Bolivia). */
+function turnoDe_(ms) {
+  const d = new Date(ms);
+  const h = Number(Utilities.formatDate(d, TZ, 'H'));
+  const fecha = Utilities.formatDate(h < 7 ? new Date(ms - 12 * 3600 * 1000) : d, TZ, 'yyyy-MM-dd');
+  const turno = h >= 7 && h < 13 ? 'MANANA' : h >= 13 && h < 19 ? 'TARDE' : (h >= 19 || h < 1) ? 'NOCHE' : 'MADRUGADA';
+  return { fecha: fecha, turno: turno };
+}
+
+function asignacionGuardia_(token, pin) {
+  const a = filas_('GuardiaRol').find(x => x.token && x.token === token);
+  if (!a) throw new Error('Enlace no válido.');
+  if (a.pin && String(a.pin) !== String(pin)) { Utilities.sleep(1500); throw new Error('PIN incorrecto.'); }
+  return a;
+}
+
+function conteoGuardia_(fecha, cargo) {
+  const c = {};
+  filas_('GuardiaFotos').filter(f => f.fecha === fecha && f.cargo === cargo)
+    .forEach(f => { c[f.turno] = c[f.turno] || {}; c[f.turno][f.lugar] = (c[f.turno][f.lugar] || 0) + 1; });
+  return c;
+}
+
+function mensajeGuardia_(a, url) {
+  return '*CONTROL DE GUARDIA - ESCONBOL*\n' + a.grado_nombre + ', usted está designado como ' + CARGOS_GUARDIA[a.cargo].nombre +
+    ' para la guardia del ' + a.fecha + ' (07:00 a 07:00).\n\nRegistre las fotografías de cada turno en:\n' + url + 'guardia.html?t=' + a.token;
+}
+
+function mensajeComando_(e, url) {
+  return '*CONTROL DE GUARDIA Y RONDA - ESCONBOL*\nSemana del ' + e.semana + '.\nConsulte las fotografías de guardia y el registro de rondas en:\n' +
+    url + 'comando.html?t=' + e.token;
+}
+
+function finSemana_(semana) {
+  const d = new Date(semana + 'T12:00:00'); d.setDate(d.getDate() + 6);
+  return Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
+}
+
+function carpetaGuardia_(fecha) {
+  const g = carpeta_('Guardia');
+  const it = g.getFoldersByName(fecha);
+  return it.hasNext() ? it.next() : g.createFolder(fecha);
+}
+
+Object.assign(ACCIONES, {
+  /* Capitán de Servicio / Oficial de Patrulla */
+  guardiaAbrir: req => {
+    const a = asignacionGuardia_(req.token, req.pin);
+    const actual = turnoDe_(Date.now());
+    return { fecha: a.fecha, cargo: CARGOS_GUARDIA[a.cargo].nombre, grado_nombre: a.grado_nombre,
+             lugares: CARGOS_GUARDIA[a.cargo].lugares, turnos: TURNOS,
+             turnoActual: actual.fecha === a.fecha ? actual.turno : null,
+             terminada: actual.fecha > a.fecha, ahora: Date.now(), conteo: conteoGuardia_(a.fecha, a.cargo) };
+  },
+  guardiaFoto: req => {
+    const a = asignacionGuardia_(req.token, req.pin);
+    const ahora = Date.now(), tomada = Number(req.tomada) || ahora;
+    if (tomada > ahora + 2 * 60 * 1000 || tomada < ahora - 6 * 3600 * 1000) throw new Error('La hora de la foto no es válida.');
+    const t = turnoDe_(tomada);
+    if (t.fecha !== a.fecha || t.turno !== req.turno) throw new Error('La foto no corresponde a este turno.');
+    if (CARGOS_GUARDIA[a.cargo].lugares.indexOf(req.lugar) < 0) throw new Error('Lugar no válido.');
+    if (!/^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(req.foto || '')) throw new Error('Imagen no válida.');
+    const hora = Utilities.formatDate(new Date(tomada), TZ, 'yyyy-MM-dd HH:mm:ss');
+    const turnoNombre = TURNOS.find(x => x.id === t.turno).nombre;
+    const nombre = a.fecha + ' ' + turnoNombre + ' - ' + req.lugar + ' - ' + hora.slice(11).replace(/:/g, '.') + '.jpg';
+    const archivo = carpetaGuardia_(a.fecha).createFile(Utilities.newBlob(Utilities.base64Decode(req.foto.split(',')[1]), 'image/jpeg', nombre));
+    hoja_('GuardiaFotos').appendRow([token_(), a.fecha, a.cargo, t.turno, req.lugar, hora,
+      Utilities.formatDate(new Date(ahora), TZ, 'yyyy-MM-dd HH:mm:ss'), archivo.getId(), a.grado_nombre]);
+    return { hora: hora, conteo: conteoGuardia_(a.fecha, a.cargo) };
+  },
+
+  /* Administrador */
+  guardiaPanel: req => {
+    admin_(req);
+    const semana = lunes_(req.fecha || hoy_()), finS = finSemana_(semana);
+    const url = PropertiesService.getScriptProperties().getProperty('WEB_URL') || '';
+    const e = filas_('EnlacesComando').find(x => x.semana === semana);
+    const cmd = filas_('Comandantes').filter(c => c.celular);
+    return {
+      semana: semana,
+      rol: filas_('GuardiaRol').filter(r => r.fecha >= semana && r.fecha <= finS).map(r => ({
+        fecha: r.fecha, cargo: r.cargo, grado_nombre: r.grado_nombre, celular: r.celular, pin: r.pin,
+        enlaceWa: r.token ? enlaceWa_(r.celular, mensajeGuardia_(r, url)) : '' })),
+      comando: e ? { pin: e.pin, url: url + 'comando.html?t=' + e.token,
+        avisos: cmd.map(c => ({ cargo: c.cargo, enlace: enlaceWa_(celular_(c.celular), mensajeComando_(e, url)) })) } : null
+    };
+  },
+  guardarGuardia: req => {
+    admin_(req);
+    const semana = lunes_(req.semana), finS = finSemana_(semana);
+    const previas = filas_('GuardiaRol').filter(r => r.fecha >= semana && r.fecha <= finS);
+    const rol = (req.rol || []).filter(r => r.fecha >= semana && r.fecha <= finS && CARGOS_GUARDIA[r.cargo] && r.grado_nombre);
+    reemplazar_('GuardiaRol', r => r.fecha >= semana && r.fecha <= finS, rol.map(r => {
+      const cel = celular_(r.celular);
+      const prev = previas.find(x => x.fecha === r.fecha && x.cargo === r.cargo && x.celular === cel);
+      return { fecha: r.fecha, cargo: r.cargo, grado_nombre: r.grado_nombre, celular: cel, pin: r.pin, token: prev ? prev.token : token_() };
+    }));
+    return true;
+  },
+  crearEnlaceComando: req => {
+    admin_(req);
+    const semana = lunes_(req.semana);
+    if (!/^\d{4,6}$/.test(String(req.pin || ''))) throw new Error('El PIN de los comandantes debe tener de 4 a 6 números.');
+    const prev = filas_('EnlacesComando').find(x => x.semana === semana);
+    reemplazar_('EnlacesComando', r => r.semana === semana, [{ semana: semana, token: prev ? prev.token : token_(), pin: req.pin }]);
+    return true;
+  },
+
+  /* Cmdte y 2do Cmdte (solo lectura) */
+  comandoAbrir: req => {
+    const e = comandoEnlace_(req.token, req.pin);
+    const semana = e.semana, finS = finSemana_(semana), hoy = hoy_();
+    const rondas = filas_('Rondas'), resp = filas_('Responsables'), rol = filas_('GuardiaRol');
+    const fotos = filas_('GuardiaFotos').filter(f => f.fecha >= semana && f.fecha <= finS);
+    const dias = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(semana + 'T12:00:00'); d.setDate(d.getDate() + i);
+      const fecha = Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
+      dias.push({
+        fecha: fecha,
+        rondas: resp.filter(p => p.fecha === fecha).map(p => {
+          const r = rondas.find(x => x.fecha === fecha && x.celular === celular_(p.celular));
+          return { grado_nombre: p.grado_nombre, completado: r && r.estado === 'COMPLETADO' ? r.completado : '',
+                   estado: r && r.estado === 'COMPLETADO' ? 'PASÓ RONDA' : (fecha >= hoy ? 'PENDIENTE' : 'NO PASÓ RONDA') };
+        }),
+        guardia: Object.keys(CARGOS_GUARDIA).map(c => {
+          const a = rol.find(x => x.fecha === fecha && x.cargo === c);
+          return { cargo: c, cargoNombre: CARGOS_GUARDIA[c].nombre, grado_nombre: a ? a.grado_nombre : '', lugares: CARGOS_GUARDIA[c].lugares,
+                   fotos: fotos.filter(f => f.fecha === fecha && f.cargo === c).map(f => ({ id: f.id, turno: f.turno, lugar: f.lugar, hora: f.hora, recibida: f.recibida })) };
+        })
+      });
+    }
+    return { semana: semana, fin: finS, turnos: TURNOS, dias: dias };
+  },
+  comandoFoto: req => {
+    const e = comandoEnlace_(req.token, req.pin);
+    const f = filas_('GuardiaFotos').find(x => x.id === req.id);
+    if (!f || f.fecha < e.semana || f.fecha > finSemana_(e.semana)) throw new Error('Foto no encontrada.');
+    return { base64: Utilities.base64Encode(DriveApp.getFileById(f.archivo_id).getBlob().getBytes()) };
+  }
+});
+
+function comandoEnlace_(token, pin) {
+  const e = filas_('EnlacesComando').find(x => x.token && x.token === token);
+  if (!e) throw new Error('Enlace no válido.');
+  if (String(e.pin) !== String(pin)) { Utilities.sleep(1500); throw new Error('PIN incorrecto.'); }
+  return e;
 }

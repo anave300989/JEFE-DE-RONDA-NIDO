@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Administración Jefe de Ronda</title>
+<title>Administración Ronda y Guardia</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <header>
-  <h1>Control del Jefe de Ronda · Administrador</h1>
+  <h1>Control de Ronda y Guardia · Administrador</h1>
   <p>Escuela de Cóndores Bolivianos</p>
 </header>
 <main>
@@ -31,8 +31,35 @@
         <button class="sec" id="btnSemana">Ver semana</button>
       </div>
       <p id="rangoSemana"></p>
+      <div class="row">
+        <button id="tabBtnRonda" class="full">Jefes de Ronda</button>
+        <button id="tabBtnGuardia" class="sec full">Guardia</button>
+      </div>
     </div>
 
+    <div id="tabGuardia" class="hidden">
+      <div class="card">
+        <h2>Enlaces de guardia de la semana</h2>
+        <p style="font-size:14px;color:var(--muted)">Envíe a cada uno su enlace por WhatsApp. El PIN se lo dice usted aparte.</p>
+        <table class="lista" id="enlacesGuardia"></table>
+      </div>
+      <div class="card">
+        <h2>Rol de guardia de la semana</h2>
+        <p style="font-size:14px;color:var(--muted)">Cada día (07:00 a 07:00): el Capitán de Servicio y el Oficial de Patrulla.</p>
+        <div id="diasGuardia"></div>
+        <button id="btnGuardarGuardia" class="full">Guardar rol de guardia</button>
+      </div>
+      <div class="card">
+        <h2>Enlace semanal para Cmdte y 2do Cmdte</h2>
+        <p style="font-size:14px;color:var(--muted)">Solo pueden ver: las fotos de guardia y si se pasó ronda cada día. Se crea uno nuevo cada semana.</p>
+        <label for="pinComando">PIN de los comandantes para esta semana (4 a 6 números)</label>
+        <input id="pinComando" inputmode="numeric" maxlength="6">
+        <p><button id="btnEnlaceComando" class="sec full">Crear o actualizar el enlace de la semana</button></p>
+        <div id="enlaceComando"></div>
+      </div>
+    </div>
+
+    <div id="tabRonda">
     <div class="card">
       <h2>Rondas de la semana</h2>
       <p style="font-size:14px;color:var(--muted)">El sistema prepara los enlaces todos los días a las 08:00.</p>
@@ -57,6 +84,7 @@
       </div>
       <p><button class="sec full" id="btnHist">Buscar</button></p>
       <table class="lista" id="historial"></table>
+    </div>
     </div>
 
     <div class="card">
@@ -98,6 +126,7 @@ function entrar() {
   $('#vLogin').classList.add('hidden'); $('#vPanel').classList.remove('hidden');
   $('#fechaSemana').value = hoyISO();
   cargar();
+  cargarGuardia();
 }
 
 async function cargar() {
@@ -131,7 +160,60 @@ async function cargar() {
   } catch (e) { aviso(msg, e.message, 'err'); }
 }
 
-$('#btnSemana').onclick = cargar;
+$('#btnSemana').onclick = () => { cargar(); cargarGuardia(); };
+
+/* ---------- Guardia ---------- */
+const CARGOS = [['CAPITAN', 'Capitán de Servicio'], ['PATRULLA', 'Oficial de Patrulla']];
+
+function pestana(t) {
+  $('#tabRonda').classList.toggle('hidden', t !== 'ronda');
+  $('#tabGuardia').classList.toggle('hidden', t !== 'guardia');
+  $('#tabBtnRonda').classList.toggle('sec', t !== 'ronda');
+  $('#tabBtnGuardia').classList.toggle('sec', t !== 'guardia');
+  try { sessionStorage.setItem('tab', t); } catch (e) {}
+}
+$('#tabBtnRonda').onclick = () => pestana('ronda');
+$('#tabBtnGuardia').onclick = () => pestana('guardia');
+try { if (sessionStorage.getItem('tab') === 'guardia') pestana('guardia'); } catch (e) {}
+
+async function cargarGuardia() {
+  try {
+    const p = await llamar('guardiaPanel', { fecha: $('#fechaSemana').value });
+    window.semanaGuardia = p.semana;
+    $('#diasGuardia').innerHTML = DIAS.map((d, i) => {
+      const f = sumar(p.semana, i);
+      return '<div class="diaG" data-fecha="' + f + '" style="border-top:1px solid var(--line);padding:12px 0"><b>' + d + ' ' + f.split('-').reverse().join('/') + '</b>' +
+        CARGOS.map(([c, n]) => { const r = p.rol.find(x => x.fecha === f && x.cargo === c) || {}; return '<div class="row cargoG" data-cargo="' + c + '">' +
+          '<div><label>' + n + ' (grado y nombre)</label><input data-f="grado_nombre" value="' + esc(r.grado_nombre) + '"></div>' +
+          '<div><label>Celular</label><input data-f="celular" inputmode="tel" value="' + esc(r.celular) + '"></div>' +
+          '<div><label>PIN</label><input data-f="pin" inputmode="numeric" maxlength="6" value="' + esc(r.pin) + '"></div></div>'; }).join('') + '</div>';
+    }).join('');
+    const enl = p.rol.filter(r => r.enlaceWa).sort((a, b) => a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.cargo < b.cargo ? -1 : 1);
+    $('#enlacesGuardia').innerHTML = enl.length ? '<tr><th>Fecha</th><th>Designado</th><th></th></tr>' + enl.map(r =>
+      '<tr><td>' + esc(r.fecha.split('-').reverse().join('/')) + '</td><td>' + esc(r.grado_nombre) + '<br><small>' + (r.cargo === 'CAPITAN' ? 'Capitán de Servicio' : 'Oficial de Patrulla') + '</small></td>' +
+      '<td><a class="btn sec" target="_blank" rel="noopener" href="' + esc(r.enlaceWa) + '">WhatsApp</a></td></tr>').join('') : '<tr><td>Cargue y guarde el rol de guardia.</td></tr>';
+    $('#pinComando').value = p.comando ? p.comando.pin : '';
+    $('#enlaceComando').innerHTML = p.comando ? '<p style="font-size:14px;word-break:break-all">Enlace: <a target="_blank" rel="noopener" href="' + esc(p.comando.url) + '">' + esc(p.comando.url) + '</a></p>' +
+      (p.comando.avisos.length ? p.comando.avisos.map(a => '<p><a class="btn full" target="_blank" rel="noopener" href="' + esc(a.enlace) + '">Enviar por WhatsApp al ' + esc(a.cargo) + '</a></p>').join('')
+        : '<p class="msg">Cargue los celulares en "Comandantes" (pestaña Jefes de Ronda) para enviarlo por WhatsApp.</p>') +
+      '<p style="font-size:14px;color:var(--muted)">El PIN no va en el mensaje: envíelo aparte.</p>' : '';
+  } catch (e) { aviso(msg, e.message, 'err'); }
+}
+
+$('#btnGuardarGuardia').onclick = async () => {
+  const rol = [];
+  document.querySelectorAll('#diasGuardia .diaG').forEach(d => d.querySelectorAll('.cargoG').forEach(r => {
+    const v = f => r.querySelector('[data-f=' + f + ']').value.trim();
+    if (v('grado_nombre')) rol.push({ fecha: d.dataset.fecha, cargo: r.dataset.cargo, grado_nombre: v('grado_nombre'), celular: v('celular'), pin: v('pin') });
+  }));
+  try { await llamar('guardarGuardia', { semana: window.semanaGuardia, rol }); await cargarGuardia(); aviso(msg, 'Rol de guardia guardado.', 'ok'); scrollTo(0, 0); }
+  catch (e) { aviso(msg, e.message, 'err'); }
+};
+
+$('#btnEnlaceComando').onclick = async () => {
+  try { await llamar('crearEnlaceComando', { semana: window.semanaGuardia, pin: $('#pinComando').value.trim() }); await cargarGuardia(); aviso(msg, 'Enlace de la semana listo.', 'ok'); }
+  catch (e) { aviso(msg, e.message, 'err'); }
+};
 
 $('#btnGuardarSemana').onclick = async () => {
   const resp = [], ss = [];
