@@ -76,13 +76,26 @@ const cola = {
       r.onerror = () => mal(r.error);
     });
   },
-  async poner(v) { const db = await this.abrir(); return new Promise(ok => { const r = db.transaction('pendientes', 'readwrite').objectStore('pendientes').add(v); r.onsuccess = () => ok(r.result); }); },
+  async poner(v) {
+    const db = await this.abrir();
+    return new Promise((ok, mal) => {
+      const tx = db.transaction('pendientes', 'readwrite'), r = tx.objectStore('pendientes').add(v);
+      r.onsuccess = () => ok(r.result);
+      tx.onerror = tx.onabort = () => mal(tx.error || r.error);
+    });
+  },
   async quitar(k) { const db = await this.abrir(); db.transaction('pendientes', 'readwrite').objectStore('pendientes').delete(k); },
   async todas() {
     const db = await this.abrir();
     return new Promise(ok => {
       const out = [], r = db.transaction('pendientes').objectStore('pendientes').openCursor();
-      r.onsuccess = () => { const c = r.result; if (c) { if (c.value.token === token) out.push({ k: c.key, v: c.value }); c.continue(); } else ok(out); };
+      r.onsuccess = () => {
+        const c = r.result;
+        if (!c) return ok(out);
+        if (c.value.token === token) out.push({ k: c.key, v: c.value });
+        else if (Date.now() - c.value.tomada > 2 * 86400000) this.quitar(c.key);
+        c.continue();
+      };
     });
   }
 };
@@ -180,7 +193,16 @@ function tomarFoto(inp) {
     ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(0, c.height - fs * 1.8, c.width, fs * 1.8);
     ctx.fillStyle = '#fff'; ctx.fillText(sello, fs * 0.5, c.height - fs * 0.6);
     const foto = c.toDataURL('image/jpeg', 0.7);
-    await cola.poner({ token, turno, lugar, tomada, foto });
+    try { await cola.poner({ token, turno, lugar, tomada, foto }); }
+    catch (e) {
+      // Si el celular no tiene espacio, se intenta enviar directo sin guardarla.
+      let r;
+      try {
+        r = await api('guardiaFoto', { token, pin, turno, lugar, tomada, foto });
+        g.conteo = r.conteo; aviso(msg, 'Foto guardada: ' + lugar + ' · ' + r.hora.slice(11), 'ok'); elegirTurno(turnoSel);
+      } catch (x) { aviso(msg, x.sinRed ? 'La memoria del celular está llena y no hay señal. Libere espacio en el celular y vuelva a tomar la foto.' : 'Foto rechazada: ' + x.message, 'err'); }
+      return;
+    }
     enviarPendientes();
   };
   img.src = URL.createObjectURL(f);
@@ -193,14 +215,16 @@ async function enviarPendientes() {
   try {
     for (const p of await cola.todas()) {
       mostrarPendientes();
+      let r;
       try {
-        const r = await api('guardiaFoto', { token, pin, turno: p.v.turno, lugar: p.v.lugar, tomada: p.v.tomada, foto: p.v.foto });
+        r = await api('guardiaFoto', { token, pin, turno: p.v.turno, lugar: p.v.lugar, tomada: p.v.tomada, foto: p.v.foto });
         await cola.quitar(p.k);
         g.conteo = r.conteo;
         aviso(msg, 'Foto guardada: ' + p.v.lugar + ' · ' + r.hora.slice(11), 'ok');
       } catch (e) {
-        if (/no corresponde|no es válida|Lugar|Imagen/.test(e.message)) { await cola.quitar(p.k); aviso(msg, 'Foto rechazada: ' + e.message, 'err'); }
-        else { aviso(msg, 'Sin conexión. La foto quedó guardada en el celular y se enviará sola.', 'err'); break; }
+        // Solo se reintenta si no hubo respuesta (sin señal). Si el sistema respondió con un error, la foto no se vuelve a intentar.
+        if (e.sinRed) { aviso(msg, 'Sin conexión. La foto quedó guardada en el celular y se enviará sola.', 'err'); break; }
+        await cola.quitar(p.k); aviso(msg, 'Foto rechazada: ' + e.message, 'err');
       }
     }
   } finally {

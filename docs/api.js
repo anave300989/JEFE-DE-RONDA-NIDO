@@ -1,11 +1,18 @@
 // Llama al backend de Google Apps Script. Se usa text/plain para evitar el bloqueo CORS.
 async function api(accion, datos) {
-  const res = await fetch(window.API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(Object.assign({ accion }, datos || {}))
-  });
-  const j = await res.json();
+  let j;
+  try {
+    const res = await fetch(window.API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ accion }, datos || {}))
+    });
+    j = await res.json();
+  } catch (e) {
+    const err = new Error('Sin conexión. Revise la señal e intente de nuevo.');
+    err.sinRed = true;
+    throw err;
+  }
   if (!j.ok) throw new Error(j.error);
   return j.data;
 }
