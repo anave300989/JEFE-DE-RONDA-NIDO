@@ -261,7 +261,7 @@ const ACCIONES = {
   /* Jefe de Ronda */
   abrir: req => {
     const r = rondaPorToken_(req.token, req.pin);
-    return { fecha: r.fecha, grado_nombre: r.grado_nombre, estado: r.estado, lista: LISTA };
+    return { fecha: r.fecha, grado_nombre: r.grado_nombre, estado: r.estado, lista: LISTA, ahora: Date.now() };
   },
   enviar: req => {
     const r = rondaPorToken_(req.token, req.pin);
