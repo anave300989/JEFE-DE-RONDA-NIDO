@@ -19,7 +19,7 @@
   .lbl { font-weight: bold; width: 3cm; }
   .nota { margin-top: 8px; text-align: justify; }
   .fotos td { border: 1px solid #000; text-align: center; width: 50%; padding: 4px; }
-  .fotos img { max-width: 8cm; max-height: 9cm; }
+  .fotos img { max-width: 8cm; max-height: 6.2cm; }
   .salto { page-break-before: always; }
 </style>
 </head>
@@ -78,9 +78,9 @@
     <h1>ANEXO FOTOGRÁFICO</h1>
     <p style="text-align:center">Ronda del <?= dia ?> de <?= mes ?> de <?= anio ?> &ndash; <?= r.grado_nombre ?></p>
     <table class="fotos">
-      <? for (var f = 0; f < 4; f += 2) { ?>
+      <? for (var f = 0; f < d.fotos.length; f += 2) { ?>
       <tr>
-        <? for (var g = f; g < f + 2; g++) { ?>
+        <? for (var g = f; g < f + 2 && g < d.fotos.length; g++) { ?>
         <td><img src="<?!= d.fotos[g] ?>"><div><b>Foto <?= g + 1 ?>:</b> <?= (d.leyendas && d.leyendas[g]) || '' ?></div></td>
         <? } ?>
       </tr>

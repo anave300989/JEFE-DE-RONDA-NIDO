@@ -6,7 +6,7 @@
  *   Responsables : fecha, grado_nombre, celular, pin   (dos por día)
  *   SantoSena    : fecha, santo, sena
  *   Comandantes  : cargo, grado_nombre, celular, clave_callmebot
- *   Rondas       : id, fecha, grado_nombre, celular, token, estado, enviado, completado, pdf_id, fotos, novedades
+ *   Rondas       : id, fecha, grado_nombre, celular, token, estado, enviado, completado, pdf_id, fotos, novedades, leyendas
  *
  * Propiedades del script (Configuración del proyecto > Propiedades del script):
  *   ADMIN_PASSWORD   : contraseña del administrador
@@ -76,11 +76,13 @@ const LISTA = [
   ]}
 ];
 
+const NFOTOS = 6;
+
 const HOJAS = {
   Responsables: ['fecha', 'grado_nombre', 'celular', 'pin'],
   SantoSena: ['fecha', 'santo', 'sena'],
   Comandantes: ['cargo', 'grado_nombre', 'celular', 'clave_callmebot'],
-  Rondas: ['id', 'fecha', 'grado_nombre', 'celular', 'token', 'estado', 'enviado', 'completado', 'pdf_id', 'fotos', 'novedades'],
+  Rondas: ['id', 'fecha', 'grado_nombre', 'celular', 'token', 'estado', 'enviado', 'completado', 'pdf_id', 'fotos', 'novedades', 'leyendas'],
   GuardiaRol: ['fecha', 'cargo', 'grado_nombre', 'celular', 'pin', 'token'],
   GuardiaFotos: ['id', 'fecha', 'cargo', 'turno', 'lugar', 'hora', 'recibida', 'archivo_id', 'grado_nombre'],
   EnlacesComando: ['semana', 'token', 'pin']
@@ -273,7 +275,8 @@ const ACCIONES = {
     r.completado = ahora_();
     const pdf = generarPdf_(r, req.datos, carpeta);
     actualizarRonda_(r.id, { estado: 'COMPLETADO', completado: r.completado, pdf_id: pdf.getId(),
-                             fotos: fotos.join(','), novedades: req.datos.novedades || '' });
+                             fotos: fotos.join(','), novedades: req.datos.novedades || '',
+                             leyendas: (req.datos.leyendas || []).map(x => String(x || '').replace(/\|/g, '/')).join('|') });
     const msg = mensajeConfirmacion_(r);
     const avisos = filas_('Comandantes').filter(c => c.celular).map(c => {
       const n = celular_(c.celular);
@@ -366,7 +369,8 @@ function validarEnvio_(d) {
   const total = LISTA.reduce((s, sec) => s + sec.items.length, 0);
   const marcados = Object.keys(d.respuestas || {}).filter(k => d.respuestas[k] === 'SI' || d.respuestas[k] === 'NO');
   if (marcados.length !== total) throw new Error('Debe marcar SI o NO en todos los puntos.');
-  if (!d.fotos || d.fotos.length !== 4) throw new Error('Debe adjuntar las 4 fotografías.');
+  // Se piden 6 fotos; las listas de 4 se aceptan solo mientras se actualizan los celulares que tenían la versión anterior abierta.
+  if (!d.fotos || [4, NFOTOS].indexOf(d.fotos.length) < 0) throw new Error('Debe adjuntar las ' + NFOTOS + ' fotografías.');
   if (!d.firma) throw new Error('Falta la firma del Jefe de Ronda.');
   const img = /^data:image\/(jpeg|png);base64,[A-Za-z0-9+\/=]+$/;
   if (!img.test(d.firma) || d.fotos.some(f => !img.test(f))) throw new Error('Imagen no válida.');
@@ -397,7 +401,7 @@ function probarPdf() {
   LISTA.forEach((s, i) => s.items.forEach((_, j) => resp[i + '-' + j] = j % 3 ? 'SI' : 'NO'));
   const pix = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
   const d = { respuestas: resp, obs: { '0-0': 'Sin novedad' }, novedades: 'Ninguna.', capitan: 'Cap. Ejemplo', cmdteGuardia: 'Sbtte. Ejemplo',
-              oficialPatrullas: 'Tte. Ejemplo', fotos: [pix, pix, pix, pix], leyendas: ['Prevención', 'Polvorines', 'Cocinas', 'Talleres'], firma: pix };
+              oficialPatrullas: 'Tte. Ejemplo', fotos: [pix, pix, pix, pix, pix, pix], leyendas: ['Prevención', 'Polvorines', 'Cocinas', 'Talleres', 'Comando', 'Transportes'], firma: pix };
   const f = generarPdf_({ fecha: hoy_(), grado_nombre: 'Tte. Prueba', completado: ahora_() }, d, carpeta_('pruebas'));
   Logger.log(f.getUrl());
 }
@@ -539,7 +543,10 @@ Object.assign(ACCIONES, {
         fecha: fecha,
         rondas: resp.filter(p => p.fecha === fecha).map(p => {
           const r = rondas.find(x => x.fecha === fecha && x.celular === celular_(p.celular));
-          return { grado_nombre: p.grado_nombre, completado: r && r.estado === 'COMPLETADO' ? r.completado : '',
+          const ok = r && r.estado === 'COMPLETADO';
+          return { grado_nombre: p.grado_nombre, completado: ok ? r.completado : '', id: ok ? r.id : '',
+                   tienePdf: !!(ok && r.pdf_id), fotos: ok && r.fotos ? r.fotos.split(',').length : 0,
+                   leyendas: ok && r.leyendas ? r.leyendas.split('|') : [],
                    estado: r && r.estado === 'COMPLETADO' ? 'PASÓ RONDA' : (fecha >= hoy ? 'PENDIENTE' : 'NO PASÓ RONDA') };
         }),
         guardia: Object.keys(CARGOS_GUARDIA).map(c => {
@@ -556,8 +563,27 @@ Object.assign(ACCIONES, {
     const f = filas_('GuardiaFotos').find(x => x.id === req.id);
     if (!f || f.fecha < e.semana || f.fecha > finSemana_(e.semana)) throw new Error('Foto no encontrada.');
     return { base64: Utilities.base64Encode(DriveApp.getFileById(f.archivo_id).getBlob().getBytes()) };
+  },
+  comandoRondaFoto: req => {
+    const r = rondaDeSemana_(comandoEnlace_(req.token, req.pin), req.id);
+    const id = (r.fotos || '').split(',')[Number(req.n)];
+    if (!id) throw new Error('Foto no encontrada.');
+    return { base64: Utilities.base64Encode(DriveApp.getFileById(id).getBlob().getBytes()) };
+  },
+  comandoPdf: req => {
+    const r = rondaDeSemana_(comandoEnlace_(req.token, req.pin), req.id);
+    if (!r.pdf_id) throw new Error('PDF no encontrado');
+    const f = DriveApp.getFileById(r.pdf_id);
+    return { nombre: f.getName(), base64: Utilities.base64Encode(f.getBlob().getBytes()) };
   }
 });
+
+/** Ronda completada que pertenece a la semana del enlace de los comandantes. */
+function rondaDeSemana_(e, id) {
+  const r = filas_('Rondas').find(x => x.id === id && x.estado === 'COMPLETADO');
+  if (!r || r.fecha < e.semana || r.fecha > finSemana_(e.semana)) throw new Error('Ronda no encontrada.');
+  return r;
+}
 
 function comandoEnlace_(token, pin) {
   const e = filas_('EnlacesComando').find(x => x.token && x.token === token);

@@ -96,7 +96,10 @@ function pintar() {
       d.rondas.every(r => r.estado === 'PASÓ RONDA') ? '<span class="estado e-PASO">Rondas OK</span>' : '<span class="estado e-PEND">Pendiente</span>';
     return '<details class="dia"' + (d.fecha === hoy ? ' open' : '') + '><summary><span>' + DIAS[i] + ' ' + f(d.fecha) + '</span>' + etiqueta + '</summary><div class="cuerpo">' +
       '<h3>Jefes de Ronda</h3>' + (d.rondas.length ? d.rondas.map(r => '<p style="margin:4px 0">' + esc(r.grado_nombre) + ' <span class="estado e-' + clase(r.estado) + '">' + esc(r.estado) + '</span>' +
-        (r.completado ? ' <small>' + esc(r.completado.slice(11)) + '</small>' : '') + '</p>').join('') : '<p style="margin:4px 0;color:var(--muted)">Sin designar.</p>') +
+        (r.completado ? ' <small>' + esc(r.completado.slice(11)) + '</small>' : '') + '</p>' +
+        (r.id ? '<p style="margin:4px 0 10px;display:flex;gap:8px">' +
+          (r.fotos ? '<button class="sec" data-rfotos="' + esc(r.id) + '" data-d="' + i + '">Ver fotos (' + r.fotos + ')</button>' : '') +
+          (r.tienePdf ? '<button class="sec" data-rpdf="' + esc(r.id) + '">Descargar PDF</button>' : '') + '</p>' : '')).join('') : '<p style="margin:4px 0;color:var(--muted)">Sin designar.</p>') +
       d.guardia.map((g, gi) => '<h3>' + esc(g.cargoNombre) + '</h3><p style="margin:0 0 6px">' + (esc(g.grado_nombre) || '<span style="color:var(--muted)">Sin designar</span>') + '</p>' +
         '<div style="overflow-x:auto"><table class="g"><tr><th>Lugar</th>' + datos.turnos.map(t => '<th>' + esc(t.nombre) + '</th>').join('') + '</tr>' +
         g.lugares.map(l => '<tr><td>' + esc(l) + '</td>' + datos.turnos.map(t => {
@@ -108,6 +111,10 @@ function pintar() {
 }
 
 document.addEventListener('click', async e => {
+  const bp = e.target.closest('button[data-rpdf]');
+  if (bp) return descargarPdf(bp);
+  const bf = e.target.closest('button[data-rfotos]');
+  if (bf) return verFotosRonda(bf);
   const b = e.target.closest('button[data-t]');
   if (!b) return;
   const d = datos.dias[+b.dataset.d], g = d.guardia[+b.dataset.g], t = datos.turnos.find(x => x.id === b.dataset.t);
@@ -120,6 +127,28 @@ document.addEventListener('click', async e => {
     try { const r = await api('comandoFoto', { token, pin, id: x.id }); const im = $('#img_' + x.id); if (im) im.src = 'data:image/jpeg;base64,' + r.base64; } catch (err) {}
   }
 });
+async function descargarPdf(b) {
+  b.disabled = true;
+  try {
+    const f = await api('comandoPdf', { token, pin, id: b.dataset.rpdf });
+    const bytes = Uint8Array.from(atob(f.base64), c => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    const a = document.createElement('a'); a.href = url; a.download = f.nombre; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch (err) { aviso(msg, err.message, 'err'); scrollTo(0, 0); }
+  b.disabled = false;
+}
+
+async function verFotosRonda(b) {
+  const d = datos.dias[+b.dataset.d], r = d.rondas.find(x => x.id === b.dataset.rfotos);
+  const n = [...Array(r.fotos).keys()];
+  $('#visorFotos').innerHTML = '<h2 style="max-width:760px;margin:0 auto 12px">Ronda · ' + esc(r.grado_nombre) + ' · ' + f(d.fecha) + '</h2>' +
+    n.map(k => '<img id="rimg_' + k + '" alt=""><p>Foto ' + (k + 1) + (r.leyendas[k] ? ': ' + esc(r.leyendas[k]) : '') + '</p>').join('');
+  $('#visor').classList.remove('hidden');
+  for (const k of n) {
+    try { const x = await api('comandoRondaFoto', { token, pin, id: r.id, n: k }); const im = $('#rimg_' + k); if (im) im.src = 'data:image/jpeg;base64,' + x.base64; } catch (err) {}
+  }
+}
 $('#cerrarVisor').onclick = () => $('#visor').classList.add('hidden');
 </script>
 </body>

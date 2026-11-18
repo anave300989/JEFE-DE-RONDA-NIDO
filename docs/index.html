@@ -41,7 +41,7 @@
     </div>
 
     <div class="card">
-      <h2>Fotografías (4 obligatorias)</h2>
+      <h2>Fotografías (6 obligatorias)</h2>
       <div class="fotos" id="fotos"></div>
     </div>
 
@@ -68,7 +68,9 @@
 const token = new URLSearchParams(location.search).get('t');
 const msg = $('#msg');
 let lista = [], pin = '';
-const fotos = [null, null, null, null];
+const NFOTOS = 6;
+const IDX = [...Array(NFOTOS).keys()];
+const fotos = IDX.map(() => null);
 const BORRADOR = 'ronda_' + token, PIN_GUARDADO = 'pin_' + token;
 
 // Las fotos se guardan en el celular (IndexedDB) para no perderlas si el navegador cierra la página.
@@ -94,7 +96,7 @@ const almacen = {
   },
   async borrar() {
     try { const db = await this.abrir(); const st = db.transaction('datos', 'readwrite').objectStore('datos');
-      ['f0', 'f1', 'f2', 'f3'].forEach(k => st.delete(token + ':' + k)); } catch (e) {}
+      IDX.forEach(i => st.delete(token + ':f' + i)); } catch (e) {}
   }
 };
 
@@ -130,7 +132,7 @@ async function entrar(p, automatico) {
 }
 
 async function restaurarArchivos() {
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < NFOTOS; i++) {
     const f = await almacen.leer('f' + i);
     if (f) mostrarFoto(i, f);
   }
@@ -145,7 +147,7 @@ function pintar() {
       '<label><input type="radio" name="r' + k + '" value="NO"' + (b.r[k] === 'NO' ? ' checked' : '') + '><span>NO</span></label></div>' +
       '<input class="obs" data-k="' + k + '" placeholder="Observación" value="' + esc(b.o[k] || '') + '"></div>'; }).join('') + '</div>').join('');
   ['capitan', 'cmdteGuardia', 'oficialPatrullas', 'novedades'].forEach(id => $('#' + id).value = b[id] || '');
-  $('#fotos').innerHTML = [0, 1, 2, 3].map(i => '<div class="foto"><label style="margin:0;color:inherit"><img id="img' + i + '" class="hidden" alt="">' +
+  $('#fotos').innerHTML = IDX.map(i => '<div class="foto"><label style="margin:0;color:inherit"><img id="img' + i + '" class="hidden" alt="">' +
     '<span id="txt' + i + '">📷 Tomar foto ' + (i + 1) + '</span><input type="file" accept="image/*" capture="environment" data-i="' + i + '"></label>' +
     '<input class="obs" id="ley' + i + '" placeholder="Lugar de la foto" value="' + esc((b.ley || [])[i] || '') + '"></div>').join('');
   document.querySelectorAll('#fotos input[type=file]').forEach(inp => inp.onchange = () => leerFoto(inp));
@@ -163,13 +165,13 @@ function respuestas() {
 function total() { return lista.reduce((s, x) => s + x.items.length, 0); }
 function progreso() {
   const n = Object.keys(respuestas().r).length;
-  $('#progreso').textContent = 'Puntos marcados: ' + n + ' de ' + total() + ' · Fotos: ' + fotos.filter(Boolean).length + ' de 4';
+  $('#progreso').textContent = 'Puntos marcados: ' + n + ' de ' + total() + ' · Fotos: ' + fotos.filter(Boolean).length + ' de ' + NFOTOS;
 }
 function guardarBorrador() {
   const x = respuestas();
   const b = { r: x.r, o: x.o };
   ['capitan', 'cmdteGuardia', 'oficialPatrullas', 'novedades'].forEach(id => b[id] = $('#' + id).value);
-  b.ley = [0, 1, 2, 3].map(i => $('#ley' + i).value);
+  b.ley = IDX.map(i => $('#ley' + i).value);
   try { localStorage.setItem(BORRADOR, JSON.stringify(b)); } catch (e) {}
 }
 function cargarBorrador() {
@@ -218,14 +220,14 @@ $('#vForm').onsubmit = async e => {
   const x = respuestas();
   const faltan = total() - Object.keys(x.r).length;
   if (faltan) return aviso(msg, 'Faltan ' + faltan + ' puntos por marcar con SI o NO.', 'err'), scrollTo(0, 0);
-  if (fotos.some(f => !f)) return aviso(msg, 'Debe tomar las 4 fotografías.', 'err'), scrollTo(0, 0);
+  if (fotos.some(f => !f)) return aviso(msg, 'Debe tomar las ' + NFOTOS + ' fotografías.', 'err'), scrollTo(0, 0);
   if (!firmado) return aviso(msg, 'Falta su firma.', 'err'), scrollTo(0, 0);
   if (!confirm('¿Enviar la lista de verificación? Ya no podrá modificarla.')) return;
   const btn = $('#btnEnviar'); btn.disabled = true; btn.textContent = 'Enviando…';
   try {
     const r = await api('enviar', { token, pin, datos: {
       respuestas: x.r, obs: x.o, fotos, firma: $('#firma').toDataURL('image/png'),
-      leyendas: [0, 1, 2, 3].map(i => $('#ley' + i).value.trim()),
+      leyendas: IDX.map(i => $('#ley' + i).value.trim()),
       capitan: $('#capitan').value.trim(), cmdteGuardia: $('#cmdteGuardia').value.trim(),
       oficialPatrullas: $('#oficialPatrullas').value.trim(), novedades: $('#novedades').value.trim() } });
     try { localStorage.removeItem(BORRADOR); localStorage.removeItem(PIN_GUARDADO); } catch (e) {}
