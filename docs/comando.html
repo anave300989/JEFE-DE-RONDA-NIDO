@@ -20,6 +20,10 @@
   table.g th, table.g td { border: 1px solid var(--line); padding: 6px 4px; text-align: center; }
   table.g td:first-child, table.g th:first-child { text-align: left; }
   table.g button { padding: 4px 8px; font-size: 13px; }
+  .ss { display: flex; gap: 10px; margin: 0 0 6px; }
+  .ss div { flex: 1; border: 2px solid var(--pri); border-radius: 8px; padding: 8px; text-align: center; }
+  .ss small { display: block; font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: .5px; }
+  .ss b { font-size: 18px; }
   .cero { color: var(--no); font-weight: 700; }
   #visor { position: fixed; inset: 0; background: rgba(0,0,0,.92); z-index: 10; overflow: auto; padding: 16px; color: #fff; }
   #visor img { width: 100%; max-width: 760px; display: block; margin: 0 auto 6px; border-radius: 6px; }
@@ -95,6 +99,8 @@ function pintar() {
     const etiqueta = !d.rondas.length ? '' : malas ? '<span class="estado e-NO">' + malas + ' sin ronda</span>' :
       d.rondas.every(r => r.estado === 'PASÓ RONDA') ? '<span class="estado e-PASO">Rondas OK</span>' : '<span class="estado e-PEND">Pendiente</span>';
     return '<details class="dia"' + (d.fecha === hoy ? ' open' : '') + '><summary><span>' + DIAS[i] + ' ' + f(d.fecha) + '</span>' + etiqueta + '</summary><div class="cuerpo">' +
+      '<h3>Santo y seña</h3>' + (d.santoSena ? '<div class="ss"><div><small>SANTO</small><b>' + esc(d.santoSena.santo) + '</b></div><div><small>SEÑA</small><b>' + esc(d.santoSena.sena) + '</b></div></div>'
+        : '<p style="margin:4px 0;color:var(--muted)">Sin cargar.</p>') +
       '<h3>Jefes de Ronda</h3>' + (d.rondas.length ? d.rondas.map(r => '<p style="margin:4px 0">' + esc(r.grado_nombre) + ' <span class="estado e-' + clase(r.estado) + '">' + esc(r.estado) + '</span>' +
         (r.completado ? ' <small>' + esc(r.completado.slice(11)) + '</small>' : '') + '</p>' +
         (r.id ? '<p style="margin:4px 0 10px;display:flex;gap:8px">' +

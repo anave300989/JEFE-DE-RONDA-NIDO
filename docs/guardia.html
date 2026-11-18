@@ -13,6 +13,10 @@
   .turno.actual { border-color: var(--pri); background: #eef3e8; }
   .turno.sel { background: var(--pri); color: var(--pri-txt); }
   .turno.sel small { color: var(--pri-txt); }
+  .ss { display: flex; gap: 10px; margin: 0; }
+  .ss div { flex: 1; border: 2px solid var(--pri); border-radius: 8px; padding: 8px; text-align: center; }
+  .ss small { display: block; font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: .5px; }
+  .ss b { font-size: 18px; }
   .lugares { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .lugar { border: 1px solid var(--line); border-radius: 10px; padding: 12px; text-align: center; background: var(--card); }
   .lugar b { display: block; margin-bottom: 4px; }
@@ -42,6 +46,10 @@
     <div class="card">
       <h2 id="cargo"></h2>
       <p id="datos" style="margin:0"></p>
+    </div>
+    <div class="card" id="vSanto">
+      <h2>Santo y seña</h2>
+      <div id="santo"></div>
     </div>
     <div id="pendientes" class="msg hidden"></div>
     <div class="card">
@@ -117,6 +125,8 @@ async function entrar(p, automatico) {
     desfase = g.ahora - Date.now();
     $('#cargo').textContent = g.cargo;
     $('#datos').innerHTML = '<b>' + esc(g.grado_nombre) + '</b><br>Guardia del ' + esc(fechaLarga(g.fecha)) + ' (07:00 a 07:00)';
+    $('#santo').innerHTML = g.santoSena ? '<div class="ss"><div><small>SANTO</small><b>' + esc(g.santoSena.santo) + '</b></div><div><small>SEÑA</small><b>' + esc(g.santoSena.sena) + '</b></div></div>'
+      : '<p style="margin:0;color:var(--muted)">El administrador todavía no cargó el santo y seña de este día.</p>';
     $('#vPin').classList.add('hidden'); msg.classList.add('hidden');
     $('#vGuardia').classList.remove('hidden');
     if (g.terminada) aviso(msg, 'Esta guardia ya terminó. Solo puede ver lo registrado.', 'ok');

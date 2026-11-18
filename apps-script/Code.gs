@@ -473,7 +473,8 @@ Object.assign(ACCIONES, {
     return { fecha: a.fecha, cargo: CARGOS_GUARDIA[a.cargo].nombre, grado_nombre: a.grado_nombre,
              lugares: CARGOS_GUARDIA[a.cargo].lugares, turnos: TURNOS,
              turnoActual: actual.fecha === a.fecha ? actual.turno : null,
-             terminada: actual.fecha > a.fecha, ahora: Date.now(), conteo: conteoGuardia_(a.fecha, a.cargo) };
+             terminada: actual.fecha > a.fecha, ahora: Date.now(), conteo: conteoGuardia_(a.fecha, a.cargo),
+             santoSena: santoSenaDe_(a.fecha) };
   },
   guardiaFoto: req => {
     const a = asignacionGuardia_(req.token, req.pin);
@@ -533,14 +534,16 @@ Object.assign(ACCIONES, {
   comandoAbrir: req => {
     const e = comandoEnlace_(req.token, req.pin);
     const semana = e.semana, finS = finSemana_(semana), hoy = hoy_();
-    const rondas = filas_('Rondas'), resp = filas_('Responsables'), rol = filas_('GuardiaRol');
+    const rondas = filas_('Rondas'), resp = filas_('Responsables'), rol = filas_('GuardiaRol'), santos = filas_('SantoSena');
     const fotos = filas_('GuardiaFotos').filter(f => f.fecha >= semana && f.fecha <= finS);
     const dias = [];
     for (let i = 0; i < 7; i++) {
       const d = new Date(semana + 'T12:00:00'); d.setDate(d.getDate() + i);
       const fecha = Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
+      const ss = santos.find(x => x.fecha === fecha);
       dias.push({
         fecha: fecha,
+        santoSena: ss && (ss.santo || ss.sena) ? { santo: ss.santo, sena: ss.sena } : null,
         rondas: resp.filter(p => p.fecha === fecha).map(p => {
           const r = rondas.find(x => x.fecha === fecha && x.celular === celular_(p.celular));
           const ok = r && r.estado === 'COMPLETADO';
@@ -577,6 +580,12 @@ Object.assign(ACCIONES, {
     return { nombre: f.getName(), base64: Utilities.base64Encode(f.getBlob().getBytes()) };
   }
 });
+
+/** Santo y seña cargado para una fecha, o null si no hay. */
+function santoSenaDe_(fecha) {
+  const ss = filas_('SantoSena').find(x => x.fecha === fecha);
+  return ss && (ss.santo || ss.sena) ? { santo: ss.santo, sena: ss.sena } : null;
+}
 
 /** Ronda completada que pertenece a la semana del enlace de los comandantes. */
 function rondaDeSemana_(e, id) {
