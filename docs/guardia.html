@@ -138,6 +138,7 @@ async function entrar(p, automatico) {
     $('#vPin').classList.add('hidden'); msg.classList.add('hidden');
     $('#vGuardia').classList.remove('hidden');
     if (g.terminada) aviso(msg, 'Esta guardia ya terminó. Solo puede ver lo registrado.', 'ok');
+    else if (g.cerrado) aviso(msg, 'El turno Madrugada terminó a las 04:30. Ya no se aceptan fotos.');
     else if (!g.turnoActual) aviso(msg, 'Su guardia todavía no empezó. Empieza a las 07:00 del ' + fechaLarga(g.fecha) + '.');
     pintarTurnos();
     if (g.turnoActual) elegirTurno(g.turnoActual);
@@ -161,6 +162,8 @@ function turnoAhora() {
   const p = partesBolivia(h < 7 ? ms - 12 * 3600 * 1000 : ms);
   const fecha = p.year + '-' + p.month + '-' + p.day;
   const t = h >= 7 && h < 13 ? 'MANANA' : h >= 13 && h < 19 ? 'TARDE' : (h >= 19 || h < 1) ? 'NOCHE' : 'MADRUGADA';
+  const q = partesBolivia(ms), hm = q.hour + ':' + q.minute;
+  if (hm >= '04:30' && hm < '07:00') return null;  // la Madrugada cierra a las 04:30
   return fecha === g.fecha ? t : null;
 }
 

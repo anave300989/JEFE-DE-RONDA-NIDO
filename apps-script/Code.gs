@@ -419,7 +419,7 @@ const TURNOS = [
   { id: 'MANANA', nombre: 'Mañana', horario: '07:00 a 13:00' },
   { id: 'TARDE', nombre: 'Tarde', horario: '13:00 a 19:00' },
   { id: 'NOCHE', nombre: 'Noche', horario: '19:00 a 01:00' },
-  { id: 'MADRUGADA', nombre: 'Madrugada', horario: '01:00 a 07:00' }
+  { id: 'MADRUGADA', nombre: 'Madrugada', horario: '01:00 a 04:30' }
 ];
 
 /** Fecha de guardia y turno que corresponden a un instante (en hora de Bolivia). */
@@ -428,7 +428,9 @@ function turnoDe_(ms) {
   const h = Number(Utilities.formatDate(d, TZ, 'H'));
   const fecha = Utilities.formatDate(h < 7 ? new Date(ms - 12 * 3600 * 1000) : d, TZ, 'yyyy-MM-dd');
   const turno = h >= 7 && h < 13 ? 'MANANA' : h >= 13 && h < 19 ? 'TARDE' : (h >= 19 || h < 1) ? 'NOCHE' : 'MADRUGADA';
-  return { fecha: fecha, turno: turno };
+  // La Madrugada solo recibe fotos y observaciones de 01:00 a 04:30; de 04:30 a 07:00 no hay turno abierto.
+  const hm = Utilities.formatDate(d, TZ, 'HH:mm');
+  return { fecha: fecha, turno: turno, abierto: !(hm >= '04:30' && hm < '07:00') };
 }
 
 function asignacionGuardia_(token, pin) {
@@ -481,7 +483,8 @@ Object.assign(ACCIONES, {
     const actual = turnoDe_(Date.now());
     return { fecha: a.fecha, cargo: CARGOS_GUARDIA[a.cargo].nombre, grado_nombre: a.grado_nombre,
              lugares: CARGOS_GUARDIA[a.cargo].lugares, turnos: TURNOS,
-             turnoActual: actual.fecha === a.fecha ? actual.turno : null,
+             turnoActual: actual.fecha === a.fecha && actual.abierto ? actual.turno : null,
+             cerrado: actual.fecha === a.fecha && !actual.abierto,
              terminada: actual.fecha > a.fecha, ahora: Date.now(), conteo: conteoGuardia_(a.fecha, a.cargo),
              santoSena: santoSenaDe_(a.fecha), obs: obsGuardia_(a.fecha, a.cargo) };
   },
@@ -491,6 +494,7 @@ Object.assign(ACCIONES, {
     if (tomada > ahora + 2 * 60 * 1000 || tomada < ahora - 6 * 3600 * 1000) throw new Error('La hora de la foto no es válida.');
     const t = turnoDe_(tomada);
     if (t.fecha !== a.fecha || t.turno !== req.turno) throw new Error('La foto no corresponde a este turno.');
+    if (!t.abierto) throw new Error('La foto no corresponde a este turno: la Madrugada recibe fotos solo hasta las 04:30.');
     if (CARGOS_GUARDIA[a.cargo].lugares.indexOf(req.lugar) < 0) throw new Error('Lugar no válido.');
     if (!/^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(req.foto || '')) throw new Error('Imagen no válida.');
     const hora = Utilities.formatDate(new Date(tomada), TZ, 'yyyy-MM-dd HH:mm:ss');
@@ -504,7 +508,7 @@ Object.assign(ACCIONES, {
   guardiaObs: req => {
     const a = asignacionGuardia_(req.token, req.pin);
     const t = turnoDe_(Date.now());
-    if (t.fecha !== a.fecha || t.turno !== req.turno) throw new Error('Solo puede escribir observaciones durante su turno.');
+    if (t.fecha !== a.fecha || t.turno !== req.turno || !t.abierto) throw new Error('Solo puede escribir observaciones durante su turno.');
     if (CARGOS_GUARDIA[a.cargo].lugares.indexOf(req.lugar) < 0) throw new Error('Lugar no válido.');
     const texto = String(req.texto || '').trim().slice(0, 1000);
     const hora = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
