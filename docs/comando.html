@@ -111,9 +111,15 @@ function pintar() {
         g.lugares.map(l => '<tr><td>' + esc(l) + '</td>' + datos.turnos.map(t => {
           const n = g.fotos.filter(x => x.turno === t.id && x.lugar === l).length;
           return '<td>' + (n ? '<button class="sec" data-d="' + i + '" data-g="' + gi + '" data-t="' + t.id + '" data-l="' + esc(l) + '">' + n + ' 📷</button>' : '<span class="cero">0</span>') + '</td>';
-        }).join('') + '</tr>').join('') + '</table></div>').join('') +
+        }).join('') + '</tr>').join('') + '</table></div>' + listaObs(g)).join('') +
       '</div></details>';
   }).join('');
+}
+
+function listaObs(g) {
+  const filas = [];
+  datos.turnos.forEach(t => g.lugares.forEach(l => { const o = ((g.obs || {})[t.id] || {})[l]; if (o) filas.push('<li><b>' + esc(t.nombre) + ' · ' + esc(l) + ':</b> ' + esc(o.texto) + ' <small style="color:var(--muted)">(' + esc(o.hora.slice(11, 16)) + ')</small></li>'); }));
+  return filas.length ? '<p style="margin:8px 0 2px;font-weight:700;font-size:13px">Observaciones de la ronda</p><ul style="margin:0 0 8px;padding-left:18px;font-size:13px">' + filas.join('') + '</ul>' : '';
 }
 
 document.addEventListener('click', async e => {

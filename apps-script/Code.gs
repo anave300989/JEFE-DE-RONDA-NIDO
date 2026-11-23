@@ -85,7 +85,8 @@ const HOJAS = {
   Rondas: ['id', 'fecha', 'grado_nombre', 'celular', 'token', 'estado', 'enviado', 'completado', 'pdf_id', 'fotos', 'novedades', 'leyendas'],
   GuardiaRol: ['fecha', 'cargo', 'grado_nombre', 'celular', 'pin', 'token'],
   GuardiaFotos: ['id', 'fecha', 'cargo', 'turno', 'lugar', 'hora', 'recibida', 'archivo_id', 'grado_nombre'],
-  EnlacesComando: ['semana', 'token', 'pin']
+  EnlacesComando: ['semana', 'token', 'pin'],
+  GuardiaObs: ['fecha', 'cargo', 'turno', 'lugar', 'texto', 'hora', 'grado_nombre']
 };
 
 /* ---------- Instalación ---------- */
@@ -437,6 +438,14 @@ function asignacionGuardia_(token, pin) {
   return a;
 }
 
+/** Observaciones de un día y cargo: { turno: { lugar: { texto, hora } } } */
+function obsGuardia_(fecha, cargo, todas) {
+  const o = {};
+  (todas || filas_('GuardiaObs')).filter(x => x.fecha === fecha && x.cargo === cargo && x.texto)
+    .forEach(x => { o[x.turno] = o[x.turno] || {}; o[x.turno][x.lugar] = { texto: x.texto, hora: x.hora }; });
+  return o;
+}
+
 function conteoGuardia_(fecha, cargo) {
   const c = {};
   filas_('GuardiaFotos').filter(f => f.fecha === fecha && f.cargo === cargo)
@@ -474,7 +483,7 @@ Object.assign(ACCIONES, {
              lugares: CARGOS_GUARDIA[a.cargo].lugares, turnos: TURNOS,
              turnoActual: actual.fecha === a.fecha ? actual.turno : null,
              terminada: actual.fecha > a.fecha, ahora: Date.now(), conteo: conteoGuardia_(a.fecha, a.cargo),
-             santoSena: santoSenaDe_(a.fecha) };
+             santoSena: santoSenaDe_(a.fecha), obs: obsGuardia_(a.fecha, a.cargo) };
   },
   guardiaFoto: req => {
     const a = asignacionGuardia_(req.token, req.pin);
@@ -491,6 +500,20 @@ Object.assign(ACCIONES, {
     hoja_('GuardiaFotos').appendRow([token_(), a.fecha, a.cargo, t.turno, req.lugar, hora,
       Utilities.formatDate(new Date(ahora), TZ, 'yyyy-MM-dd HH:mm:ss'), archivo.getId(), a.grado_nombre]);
     return { hora: hora, conteo: conteoGuardia_(a.fecha, a.cargo) };
+  },
+  guardiaObs: req => {
+    const a = asignacionGuardia_(req.token, req.pin);
+    const t = turnoDe_(Date.now());
+    if (t.fecha !== a.fecha || t.turno !== req.turno) throw new Error('Solo puede escribir observaciones durante su turno.');
+    if (CARGOS_GUARDIA[a.cargo].lugares.indexOf(req.lugar) < 0) throw new Error('Lugar no válido.');
+    const texto = String(req.texto || '').trim().slice(0, 1000);
+    const hora = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
+    const sh = hoja_('GuardiaObs');
+    const fila = filas_('GuardiaObs').find(x => x.fecha === a.fecha && x.cargo === a.cargo && x.turno === t.turno && x.lugar === req.lugar);
+    const valores = [a.fecha, a.cargo, t.turno, req.lugar, texto, hora, a.grado_nombre];
+    if (fila) sh.getRange(fila._fila, 1, 1, valores.length).setValues([valores]);
+    else sh.appendRow(valores);
+    return { obs: obsGuardia_(a.fecha, a.cargo) };
   },
 
   /* Administrador */
@@ -534,7 +557,7 @@ Object.assign(ACCIONES, {
   comandoAbrir: req => {
     const e = comandoEnlace_(req.token, req.pin);
     const semana = e.semana, finS = finSemana_(semana), hoy = hoy_();
-    const rondas = filas_('Rondas'), resp = filas_('Responsables'), rol = filas_('GuardiaRol'), santos = filas_('SantoSena');
+    const rondas = filas_('Rondas'), resp = filas_('Responsables'), rol = filas_('GuardiaRol'), santos = filas_('SantoSena'), obs = filas_('GuardiaObs');
     const fotos = filas_('GuardiaFotos').filter(f => f.fecha >= semana && f.fecha <= finS);
     const dias = [];
     for (let i = 0; i < 7; i++) {
@@ -555,6 +578,7 @@ Object.assign(ACCIONES, {
         guardia: Object.keys(CARGOS_GUARDIA).map(c => {
           const a = rol.find(x => x.fecha === fecha && x.cargo === c);
           return { cargo: c, cargoNombre: CARGOS_GUARDIA[c].nombre, grado_nombre: a ? a.grado_nombre : '', lugares: CARGOS_GUARDIA[c].lugares,
+                   obs: obsGuardia_(fecha, c, obs),
                    fotos: fotos.filter(f => f.fecha === fecha && f.cargo === c).map(f => ({ id: f.id, turno: f.turno, lugar: f.lugar, hora: f.hora, recibida: f.recibida })) };
         })
       });

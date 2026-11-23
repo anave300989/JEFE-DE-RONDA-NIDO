@@ -24,6 +24,10 @@
   .lugar label { margin: 0; display: block; color: var(--pri-txt); background: var(--pri); border-radius: 8px; padding: 10px 6px; font-weight: 600; cursor: pointer; }
   .lugar input { display: none; }
   .lugar.solo label { display: none; }
+  .lugar textarea { width: 100%; box-sizing: border-box; margin-top: 8px; min-height: 64px; font-size: 14px; padding: 6px; border: 1px solid var(--line); border-radius: 8px; font-family: inherit; resize: vertical; }
+  .lugar .gobs { width: 100%; margin-top: 6px; padding: 8px 6px; font-size: 14px; }
+  .lugar .obsv { margin-top: 8px; font-size: 13px; text-align: left; white-space: pre-wrap; color: var(--txt); }
+  .lugar .obsh { font-size: 11px; color: var(--muted); margin-top: 2px; text-align: left; }
 </style>
 </head>
 <body>
@@ -175,8 +179,10 @@ function elegirTurno(t) {
     : 'Este turno no está habilitado ahora. Solo se pueden tomar fotos en el turno de la hora actual.';
   $('#lugares').innerHTML = g.lugares.map((l, i) => '<div class="lugar' + (activo ? '' : ' solo') + '"><b>' + esc(l) + '</b>' +
     '<div class="n" id="n' + i + '">' + fotos((g.conteo[t] || {})[l] || 0) + '</div>' +
-    '<label>📷 Tomar foto<input type="file" accept="image/*" capture="environment" data-l="' + i + '"></label></div>').join('');
+    '<label>📷 Tomar foto<input type="file" accept="image/*" capture="environment" data-l="' + i + '"></label>' + cuadroObs(t, l, i, activo) + '</div>').join('');
   document.querySelectorAll('#lugares input').forEach(inp => inp.onchange = () => tomarFoto(inp));
+  document.querySelectorAll('#lugares .gobs').forEach(b => b.onclick = () => guardarObs(b));
+  document.querySelectorAll('#lugares textarea').forEach(x => x.oninput = () => borradorObs[t + '|' + g.lugares[+x.id.slice(3)]] = x.value);
   $('#vLugares').classList.remove('hidden');
   pintarTurnos();
 }
@@ -216,6 +222,31 @@ function tomarFoto(inp) {
     enviarPendientes();
   };
   img.src = URL.createObjectURL(f);
+}
+
+// Lo escrito y aún no guardado se conserva aunque la pantalla se vuelva a dibujar (por ejemplo, al subir una foto).
+const borradorObs = {};
+
+function cuadroObs(t, l, i, activo) {
+  const o = ((g.obs || {})[t] || {})[l];
+  const hora = o ? '<div class="obsh">Guardado ' + esc(o.hora.slice(11, 16)) + '</div>' : '';
+  if (!activo) return o ? '<div class="obsv"><b>Obs.:</b> ' + esc(o.texto) + '</div>' + hora : '';
+  return '<textarea id="obs' + i + '" placeholder="Observaciones de la ronda">' + esc(borradorObs[t + '|' + l] ?? (o ? o.texto : '')) + '</textarea>' +
+    '<button class="sec gobs" data-l="' + i + '">Guardar observación</button>' + hora;
+}
+
+async function guardarObs(b) {
+  const i = +b.dataset.l, lugar = g.lugares[i], texto = $('#obs' + i).value;
+  b.disabled = true; b.textContent = 'Guardando…';
+  try {
+    g.obs = (await api('guardiaObs', { token, pin, turno: turnoSel, lugar, texto })).obs;
+    delete borradorObs[turnoSel + '|' + lugar];
+    aviso(msg, 'Observación guardada: ' + lugar, 'ok');
+    elegirTurno(turnoSel);
+  } catch (e) {
+    aviso(msg, e.sinRed ? 'Sin conexión. La observación no se guardó; vuelva a presionar Guardar cuando tenga señal.' : e.message, 'err');
+    b.disabled = false; b.textContent = 'Guardar observación';
+  }
 }
 
 let enviando = false;
