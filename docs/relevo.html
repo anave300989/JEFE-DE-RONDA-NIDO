@@ -42,7 +42,7 @@
     </div>
     <div id="pendientes" class="msg hidden"></div>
     <div class="card" id="vItems">
-      <h2>Fotografías del relevo</h2>
+      <h2 id="tituloItems">Fotografías del relevo</h2>
       <p id="nota" style="font-size:14px;color:var(--muted);margin-top:0"></p>
       <div class="items" id="items"></div>
     </div>
@@ -76,7 +76,8 @@ async function entrar(p, automatico) {
     try { localStorage.setItem(PIN_GUARDADO, pin); } catch (e) {}
     desfase = r.ahora - Date.now();
     $('#cargo').textContent = r.cargo;
-    $('#datos').innerHTML = '<b>' + esc(r.grado_nombre) + '</b><br>Relevo del ' + esc(fechaLarga(r.fecha)) + ' (' + esc(r.desde) + ' a ' + esc(r.hasta) + ')';
+    $('#datos').innerHTML = '<b>' + esc(r.grado_nombre) + '</b><br>Semana del ' + esc(fechaLarga(r.semana)) + ' al ' + esc(fechaLarga(r.fin)) +
+      '<br>Relevo diario de ' + esc(r.desde) + ' a ' + esc(r.hasta);
     $('#vPin').classList.add('hidden'); msg.classList.add('hidden');
     $('#vRelevo').classList.remove('hidden');
     pintar();
@@ -96,17 +97,20 @@ function partesBolivia(ms) {
   return o;
 }
 function abiertoAhora() {
-  const p = partesBolivia(Date.now() + desfase), hm = p.hour + ':' + p.minute;
-  return p.year + '-' + p.month + '-' + p.day === r.fecha && hm >= r.desde && hm < r.hasta;
+  const p = partesBolivia(Date.now() + desfase), hm = p.hour + ':' + p.minute, f = p.year + '-' + p.month + '-' + p.day;
+  return f === r.fecha && f >= r.semana && f <= r.fin && hm >= r.desde && hm < r.hasta;
 }
 function fechaLarga(f) { return f.split('-').reverse().join('/'); }
 
 function pintar() {
   const abierto = abiertoAhora(), hechas = r.fotos.filter(Boolean).length;
   $('#vItems').classList.toggle('cerrado', !abierto);
+  $('#tituloItems').textContent = r.enSemana ? 'Relevo del ' + fechaLarga(r.fecha) : 'Fotografías del relevo';
   $('#nota').textContent = abierto ? 'Tome una foto de cada punto con la cámara. Si se equivoca, puede volver a tomarla hasta las ' + r.hasta + '.'
-    : 'El registro del relevo solo está habilitado de ' + r.desde + ' a ' + r.hasta + ' del ' + fechaLarga(r.fecha) + '.';
-  if (!abierto && hechas < r.items.length) aviso(msg, 'El relevo está cerrado en este momento. Fotos registradas: ' + hechas + ' de ' + r.items.length + '.', hechas ? 'ok' : '');
+    : !r.enSemana ? 'Este enlace es para la semana del ' + fechaLarga(r.semana) + ' al ' + fechaLarga(r.fin) + '.'
+    : 'El registro del relevo solo está habilitado de ' + r.desde + ' a ' + r.hasta + '.';
+  if (!r.enSemana) msg.classList.add('hidden');
+  else if (!abierto && hechas < r.items.length) aviso(msg, 'El relevo está cerrado en este momento. Fotos registradas: ' + hechas + ' de ' + r.items.length + '.', hechas ? 'ok' : '');
   else if (hechas === r.items.length) aviso(msg, 'Relevo completo: las ' + r.items.length + ' fotografías fueron registradas.', 'ok');
   $('#items').innerHTML = r.items.map((t, i) => {
     const f = r.fotos[i];
@@ -181,7 +185,15 @@ async function enviarPendientes() {
   pintar();
   if (/err|ok/.test(m)) { msg.className = m; msg.textContent = t; }
 }
-setInterval(() => { if (r) { if (navigator.onLine) enviarPendientes(); else pintar(); } }, 60000);
+// Si la página quedó abierta de un día para otro, se vuelve a pedir el relevo del día nuevo.
+async function actualizarDia() {
+  if (!r) return;
+  const p = partesBolivia(Date.now() + desfase);
+  if (p.year + '-' + p.month + '-' + p.day === r.fecha) return;
+  try { r = await api('relevoAbrir', { token, pin }); desfase = r.ahora - Date.now(); Object.keys(vistas).forEach(k => delete vistas[k]); pintar(); } catch (e) {}
+}
+setInterval(async () => { if (r) { await actualizarDia(); if (navigator.onLine) enviarPendientes(); else pintar(); } }, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) actualizarDia(); });
 window.addEventListener('online', enviarPendientes);
 </script>
 </body>

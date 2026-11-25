@@ -163,7 +163,15 @@ async function cargar() {
 $('#btnSemana').onclick = () => { cargar(); cargarGuardia(); };
 
 /* ---------- Guardia ---------- */
-const CARGOS = [['CAPITAN', 'Capitán de Servicio'], ['PATRULLA', 'Oficial de Patrulla'], ['AYUDANTE', 'Ayudante de Órdenes (relevo 05:00 a 07:30)']];
+const CARGOS = [['CAPITAN', 'Capitán de Servicio'], ['PATRULLA', 'Oficial de Patrulla']];
+const NOMBRES_CARGO = { CAPITAN: 'Capitán de Servicio', PATRULLA: 'Oficial de Patrulla', AYUDANTE: 'Ayudante de Órdenes · relevo de toda la semana' };
+
+function filaCargo(c, n, r) {
+  return '<div class="row cargoG" data-cargo="' + c + '">' +
+    '<div><label>' + n + ' (grado y nombre)</label><input data-f="grado_nombre" value="' + esc(r.grado_nombre) + '"></div>' +
+    '<div><label>Celular</label><input data-f="celular" inputmode="tel" value="' + esc(r.celular) + '"></div>' +
+    '<div><label>PIN</label><input data-f="pin" inputmode="numeric" maxlength="6" value="' + esc(r.pin) + '"></div></div>';
+}
 
 function pestana(t) {
   $('#tabRonda').classList.toggle('hidden', t !== 'ronda');
@@ -180,17 +188,19 @@ async function cargarGuardia() {
   try {
     const p = await llamar('guardiaPanel', { fecha: $('#fechaSemana').value });
     window.semanaGuardia = p.semana;
-    $('#diasGuardia').innerHTML = DIAS.map((d, i) => {
-      const f = sumar(p.semana, i);
-      return '<div class="diaG" data-fecha="' + f + '" style="border-top:1px solid var(--line);padding:12px 0"><b>' + d + ' ' + f.split('-').reverse().join('/') + '</b>' +
-        CARGOS.map(([c, n]) => { const r = p.rol.find(x => x.fecha === f && x.cargo === c) || {}; return '<div class="row cargoG" data-cargo="' + c + '">' +
-          '<div><label>' + n + ' (grado y nombre)</label><input data-f="grado_nombre" value="' + esc(r.grado_nombre) + '"></div>' +
-          '<div><label>Celular</label><input data-f="celular" inputmode="tel" value="' + esc(r.celular) + '"></div>' +
-          '<div><label>PIN</label><input data-f="pin" inputmode="numeric" maxlength="6" value="' + esc(r.pin) + '"></div></div>'; }).join('') + '</div>';
-    }).join('');
-    const enl = p.rol.filter(r => r.enlaceWa).sort((a, b) => a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.cargo < b.cargo ? -1 : 1);
+    const ay = p.rol.find(x => x.cargo === 'AYUDANTE') || {};
+    $('#diasGuardia').innerHTML = '<div class="diaG" data-fecha="' + p.semana + '" style="padding:0 0 12px"><b>Ayudante de Órdenes de la semana</b>' +
+      '<p style="font-size:14px;color:var(--muted);margin:4px 0">Un solo enlace para toda la semana. Cada día registra el relevo de guardia de 05:00 a 07:30.</p>' +
+      filaCargo('AYUDANTE', 'Ayudante de Órdenes', ay) + '</div>' +
+      DIAS.map((d, i) => {
+        const f = sumar(p.semana, i);
+        return '<div class="diaG" data-fecha="' + f + '" style="border-top:1px solid var(--line);padding:12px 0"><b>' + d + ' ' + f.split('-').reverse().join('/') + '</b>' +
+          CARGOS.map(([c, n]) => filaCargo(c, n, p.rol.find(x => x.fecha === f && x.cargo === c) || {})).join('') + '</div>';
+      }).join('');
+    const orden = r => (r.cargo === 'AYUDANTE' ? '0' : '1') + r.fecha + r.cargo;
+    const enl = p.rol.filter(r => r.enlaceWa).sort((a, b) => orden(a) < orden(b) ? -1 : 1);
     $('#enlacesGuardia').innerHTML = enl.length ? '<tr><th>Fecha</th><th>Designado</th><th></th></tr>' + enl.map(r =>
-      '<tr><td>' + esc(r.fecha.split('-').reverse().join('/')) + '</td><td>' + esc(r.grado_nombre) + '<br><small>' + (CARGOS.find(c => c[0] === r.cargo) || [, ''])[1] + '</small></td>' +
+      '<tr><td>' + (r.cargo === 'AYUDANTE' ? 'Semana' : esc(r.fecha.split('-').reverse().join('/'))) + '</td><td>' + esc(r.grado_nombre) + '<br><small>' + esc(NOMBRES_CARGO[r.cargo] || '') + '</small></td>' +
       '<td><a class="btn sec" target="_blank" rel="noopener" href="' + esc(r.enlaceWa) + '">WhatsApp</a></td></tr>').join('') : '<tr><td>Cargue y guarde el rol de guardia.</td></tr>';
     $('#pinComando').value = p.comando ? p.comando.pin : '';
     $('#enlaceComando').innerHTML = p.comando ? '<p style="font-size:14px;word-break:break-all">Enlace: <a target="_blank" rel="noopener" href="' + esc(p.comando.url) + '">' + esc(p.comando.url) + '</a></p>' +
