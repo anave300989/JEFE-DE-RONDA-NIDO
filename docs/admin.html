@@ -163,7 +163,7 @@ async function cargar() {
 $('#btnSemana').onclick = () => { cargar(); cargarGuardia(); };
 
 /* ---------- Guardia ---------- */
-const CARGOS = [['CAPITAN', 'Capitán de Servicio'], ['PATRULLA', 'Oficial de Patrulla']];
+const CARGOS = [['CAPITAN', 'Capitán de Servicio'], ['PATRULLA', 'Oficial de Patrulla'], ['AYUDANTE', 'Ayudante de Órdenes (relevo 05:00 a 07:30)']];
 
 function pestana(t) {
   $('#tabRonda').classList.toggle('hidden', t !== 'ronda');
@@ -190,7 +190,7 @@ async function cargarGuardia() {
     }).join('');
     const enl = p.rol.filter(r => r.enlaceWa).sort((a, b) => a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.cargo < b.cargo ? -1 : 1);
     $('#enlacesGuardia').innerHTML = enl.length ? '<tr><th>Fecha</th><th>Designado</th><th></th></tr>' + enl.map(r =>
-      '<tr><td>' + esc(r.fecha.split('-').reverse().join('/')) + '</td><td>' + esc(r.grado_nombre) + '<br><small>' + (r.cargo === 'CAPITAN' ? 'Capitán de Servicio' : 'Oficial de Patrulla') + '</small></td>' +
+      '<tr><td>' + esc(r.fecha.split('-').reverse().join('/')) + '</td><td>' + esc(r.grado_nombre) + '<br><small>' + (CARGOS.find(c => c[0] === r.cargo) || [, ''])[1] + '</small></td>' +
       '<td><a class="btn sec" target="_blank" rel="noopener" href="' + esc(r.enlaceWa) + '">WhatsApp</a></td></tr>').join('') : '<tr><td>Cargue y guarde el rol de guardia.</td></tr>';
     $('#pinComando').value = p.comando ? p.comando.pin : '';
     $('#enlaceComando').innerHTML = p.comando ? '<p style="font-size:14px;word-break:break-all">Enlace: <a target="_blank" rel="noopener" href="' + esc(p.comando.url) + '">' + esc(p.comando.url) + '</a></p>' +

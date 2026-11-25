@@ -106,6 +106,7 @@ function pintar() {
         (r.id ? '<p style="margin:4px 0 10px;display:flex;gap:8px">' +
           (r.fotos ? '<button class="sec" data-rfotos="' + esc(r.id) + '" data-d="' + i + '">Ver fotos (' + r.fotos + ')</button>' : '') +
           (r.tienePdf ? '<button class="sec" data-rpdf="' + esc(r.id) + '">Descargar PDF</button>' : '') + '</p>' : '')).join('') : '<p style="margin:4px 0;color:var(--muted)">Sin designar.</p>') +
+      relevoHtml(d, i) +
       d.guardia.map((g, gi) => '<h3>' + esc(g.cargoNombre) + '</h3><p style="margin:0 0 6px">' + (esc(g.grado_nombre) || '<span style="color:var(--muted)">Sin designar</span>') + '</p>' +
         '<div style="overflow-x:auto"><table class="g"><tr><th>Lugar</th>' + datos.turnos.map(t => '<th>' + esc(t.nombre) + '</th>').join('') + '</tr>' +
         g.lugares.map(l => '<tr><td>' + esc(l) + '</td>' + datos.turnos.map(t => {
@@ -116,6 +117,29 @@ function pintar() {
   }).join('');
 }
 
+function relevoHtml(d, i) {
+  const r = d.relevo;
+  if (!r) return '';
+  if (!r.grado_nombre && !r.fotos.some(Boolean)) return '<h3>Relevo de guardia</h3><p style="margin:4px 0;color:var(--muted)">Ayudante de Órdenes sin designar.</p>';
+  const c = { 'REALIZADO': 'PASO', 'PENDIENTE': 'PEND' }[r.estado] || 'NO';
+  const n = r.fotos.filter(Boolean).length, ultima = r.fotos.filter(Boolean).map(x => x.hora).sort().pop();
+  return '<h3>Relevo de guardia</h3><p style="margin:4px 0">' + (esc(r.grado_nombre) || '<span style="color:var(--muted)">Ayudante de Órdenes sin designar</span>') +
+    ' <span class="estado e-' + c + '">' + esc(r.estado) + '</span>' + (ultima ? ' <small>' + esc(ultima.slice(11, 16)) + '</small>' : '') + '</p>' +
+    (n ? '<p style="margin:4px 0 10px"><button class="sec" data-relevo="' + i + '">Ver fotos (' + n + ' de ' + r.items.length + ')</button></p>' : '');
+}
+
+async function verRelevo(b) {
+  const d = datos.dias[+b.dataset.relevo], r = d.relevo;
+  $('#visorFotos').innerHTML = '<h2 style="max-width:760px;margin:0 auto 12px">Relevo de guardia · ' + f(d.fecha) + '</h2>' +
+    r.items.map((t, k) => r.fotos[k] ? '<img id="vimg_' + k + '" alt=""><p>' + (k + 1) + '. ' + esc(t) + ' · ' + esc(r.fotos[k].hora.slice(11)) + '</p>'
+      : '<p>' + (k + 1) + '. ' + esc(t) + ' · <b style="color:#ff8a80">sin foto</b></p>').join('');
+  $('#visor').classList.remove('hidden');
+  for (let k = 0; k < r.items.length; k++) {
+    if (!r.fotos[k]) continue;
+    try { const x = await api('comandoRelevoFoto', { token, pin, fecha: d.fecha, n: k }); const im = $('#vimg_' + k); if (im) im.src = 'data:image/jpeg;base64,' + x.base64; } catch (err) {}
+  }
+}
+
 function listaObs(g) {
   const filas = [];
   datos.turnos.forEach(t => g.lugares.forEach(l => { const o = ((g.obs || {})[t.id] || {})[l]; if (o) filas.push('<li><b>' + esc(t.nombre) + ' · ' + esc(l) + ':</b> ' + esc(o.texto) + ' <small style="color:var(--muted)">(' + esc(o.hora.slice(11, 16)) + ')</small></li>'); }));
@@ -123,6 +147,8 @@ function listaObs(g) {
 }
 
 document.addEventListener('click', async e => {
+  const bv = e.target.closest('button[data-relevo]');
+  if (bv) return verRelevo(bv);
   const bp = e.target.closest('button[data-rpdf]');
   if (bp) return descargarPdf(bp);
   const bf = e.target.closest('button[data-rfotos]');

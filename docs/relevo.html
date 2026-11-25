@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Relevo de Guardia</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .items { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .item { border: 1px solid var(--line); border-radius: 10px; padding: 12px; text-align: center; background: var(--card); }
+  .item.ok { border: 2px solid var(--si); }
+  .item b { display: block; margin-bottom: 4px; }
+  .item .n { font-size: 13px; color: var(--muted); margin-bottom: 8px; min-height: 18px; }
+  .item.ok .n { color: var(--si); font-weight: 700; }
+  .item img { width: 100%; border-radius: 6px; margin-bottom: 8px; }
+  .item label { margin: 0; display: block; color: var(--pri-txt); background: var(--pri); border-radius: 8px; padding: 10px 6px; font-weight: 600; cursor: pointer; }
+  .item input { display: none; }
+  .cerrado .item label { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Relevo de Guardia</h1>
+  <p>Escuela de Cóndores Bolivianos</p>
+</header>
+<main>
+  <div id="msg" class="msg hidden"></div>
+
+  <section id="vPin" class="card hidden">
+    <h2>Ingreso</h2>
+    <label for="pin">PIN personal</label>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off">
+    <p></p>
+    <button id="btnPin" class="full">Ingresar</button>
+  </section>
+
+  <div id="vRelevo" class="hidden">
+    <div class="card">
+      <h2 id="cargo"></h2>
+      <p id="datos" style="margin:0"></p>
+    </div>
+    <div id="pendientes" class="msg hidden"></div>
+    <div class="card" id="vItems">
+      <h2>Fotografías del relevo</h2>
+      <p id="nota" style="font-size:14px;color:var(--muted);margin-top:0"></p>
+      <div class="items" id="items"></div>
+    </div>
+  </div>
+</main>
+
+<script src="config.js"></script>
+<script src="api.js"></script>
+<script>
+const token = new URLSearchParams(location.search).get('t');
+const msg = $('#msg');
+const PIN_GUARDADO = 'rpin_' + token, PENDIENTES = 'relevo_pend_' + token;
+// Una foto de la cámara llega recién creada; una de la galería trae su fecha antigua.
+const MAX_ANTIGUEDAD = 10 * 60 * 1000;
+let pin = '', r = null, desfase = 0;
+const vistas = {};
+
+if (!token) aviso(msg, 'Enlace no válido. Use el enlace que recibió por WhatsApp.', 'err');
+else {
+  let guardado = '';
+  try { guardado = localStorage.getItem(PIN_GUARDADO) || ''; } catch (e) {}
+  if (guardado) entrar(guardado, true); else $('#vPin').classList.remove('hidden');
+}
+$('#btnPin').onclick = () => entrar($('#pin').value.trim(), false);
+
+async function entrar(p, automatico) {
+  pin = p;
+  $('#btnPin').disabled = true;
+  try {
+    r = await api('relevoAbrir', { token, pin });
+    try { localStorage.setItem(PIN_GUARDADO, pin); } catch (e) {}
+    desfase = r.ahora - Date.now();
+    $('#cargo').textContent = r.cargo;
+    $('#datos').innerHTML = '<b>' + esc(r.grado_nombre) + '</b><br>Relevo del ' + esc(fechaLarga(r.fecha)) + ' (' + esc(r.desde) + ' a ' + esc(r.hasta) + ')';
+    $('#vPin').classList.add('hidden'); msg.classList.add('hidden');
+    $('#vRelevo').classList.remove('hidden');
+    pintar();
+    enviarPendientes();
+  } catch (e) {
+    if (automatico) { try { localStorage.removeItem(PIN_GUARDADO); } catch (x) {} $('#vPin').classList.remove('hidden'); }
+    aviso(msg, e.message, 'err');
+  }
+  $('#btnPin').disabled = false;
+}
+
+// Hora de Bolivia según el reloj del sistema (no el del celular).
+function partesBolivia(ms) {
+  const o = {};
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'America/La_Paz', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
+    .formatToParts(new Date(ms)).forEach(x => o[x.type] = x.value);
+  return o;
+}
+function abiertoAhora() {
+  const p = partesBolivia(Date.now() + desfase), hm = p.hour + ':' + p.minute;
+  return p.year + '-' + p.month + '-' + p.day === r.fecha && hm >= r.desde && hm < r.hasta;
+}
+function fechaLarga(f) { return f.split('-').reverse().join('/'); }
+
+function pintar() {
+  const abierto = abiertoAhora(), hechas = r.fotos.filter(Boolean).length;
+  $('#vItems').classList.toggle('cerrado', !abierto);
+  $('#nota').textContent = abierto ? 'Tome una foto de cada punto con la cámara. Si se equivoca, puede volver a tomarla hasta las ' + r.hasta + '.'
+    : 'El registro del relevo solo está habilitado de ' + r.desde + ' a ' + r.hasta + ' del ' + fechaLarga(r.fecha) + '.';
+  if (!abierto && hechas < r.items.length) aviso(msg, 'El relevo está cerrado en este momento. Fotos registradas: ' + hechas + ' de ' + r.items.length + '.', hechas ? 'ok' : '');
+  else if (hechas === r.items.length) aviso(msg, 'Relevo completo: las ' + r.items.length + ' fotografías fueron registradas.', 'ok');
+  $('#items').innerHTML = r.items.map((t, i) => {
+    const f = r.fotos[i];
+    return '<div class="item' + (f ? ' ok' : '') + '"><b>' + (i + 1) + '. ' + esc(t) + '</b>' +
+      (vistas[i] ? '<img src="' + vistas[i] + '" alt="">' : '') +
+      '<div class="n">' + (f ? '✓ Registrada ' + esc(f.hora.slice(11, 16)) : 'Sin foto') + '</div>' +
+      '<label>📷 ' + (f ? 'Volver a tomar' : 'Tomar foto') + '<input type="file" accept="image/*" capture="environment" data-i="' + i + '"></label></div>';
+  }).join('');
+  document.querySelectorAll('#items input').forEach(inp => inp.onchange = () => tomarFoto(inp));
+}
+
+function tomarFoto(inp) {
+  const f = inp.files[0], i = +inp.dataset.i;
+  inp.value = '';
+  if (!f) return;
+  if (!f.lastModified || Date.now() - f.lastModified > MAX_ANTIGUEDAD) {
+    aviso(msg, 'Foto rechazada: debe ser tomada en este momento con la cámara, no de la galería.', 'err');
+    return scrollTo(0, 0);
+  }
+  const tomada = Date.now() + desfase;
+  const img = new Image();
+  img.onload = () => {
+    const max = 1280, s = Math.min(1, max / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    URL.revokeObjectURL(img.src);
+    // Sello con fecha y hora del sistema y el punto del relevo.
+    const d = partesBolivia(tomada);
+    const sello = d.day + '/' + d.month + '/' + d.year + ' ' + d.hour + ':' + d.minute + ':' + d.second + ' · Relevo · ' + r.items[i];
+    const fs = Math.max(16, Math.round(c.width / 32));
+    ctx.font = 'bold ' + fs + 'px sans-serif';
+    ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(0, c.height - fs * 1.8, c.width, fs * 1.8);
+    ctx.fillStyle = '#fff'; ctx.fillText(sello, fs * 0.5, c.height - fs * 0.6);
+    const foto = c.toDataURL('image/jpeg', 0.7);
+    vistas[i] = foto;
+    const pend = leerPendientes(); pend[i] = { tomada, foto }; guardarPendientes(pend);
+    enviarPendientes();
+  };
+  img.src = URL.createObjectURL(f);
+}
+
+// Fotos que aún no llegaron al sistema (por ejemplo, sin señal). Se guardan dentro de la página y se reenvían.
+function leerPendientes() { try { return JSON.parse(localStorage.getItem(PENDIENTES)) || {}; } catch (e) { return {}; } }
+function guardarPendientes(p) { try { Object.keys(p).length ? localStorage.setItem(PENDIENTES, JSON.stringify(p)) : localStorage.removeItem(PENDIENTES); } catch (e) {} }
+
+let enviando = false;
+async function enviarPendientes() {
+  if (enviando || !r) return;
+  enviando = true;
+  const pend = leerPendientes();
+  for (const i of Object.keys(pend)) {
+    try {
+      const x = await api('relevoFoto', { token, pin, item: +i, tomada: pend[i].tomada, foto: pend[i].foto });
+      delete pend[i]; guardarPendientes(pend);
+      r.fotos = x.fotos;
+      aviso(msg, 'Foto registrada: ' + r.items[i] + ' · ' + x.hora.slice(11), 'ok');
+    } catch (e) {
+      if (e.sinRed) { aviso(msg, 'Sin conexión. La foto quedó guardada y se enviará sola.', 'err'); break; }
+      delete pend[i]; guardarPendientes(pend); delete vistas[i];
+      aviso(msg, 'Foto rechazada: ' + e.message, 'err');
+    }
+  }
+  enviando = false;
+  const n = Object.keys(leerPendientes()).length, el = $('#pendientes');
+  if (n) {
+    el.innerHTML = 'Fotos por enviar: <b>' + n + '</b> <button class="sec" id="btnReintentar" style="padding:6px 10px">Reintentar</button>';
+    el.classList.remove('hidden'); $('#btnReintentar').onclick = enviarPendientes;
+  } else el.classList.add('hidden');
+  const m = msg.className, t = msg.textContent;
+  pintar();
+  if (/err|ok/.test(m)) { msg.className = m; msg.textContent = t; }
+}
+setInterval(() => { if (r) { if (navigator.onLine) enviarPendientes(); else pintar(); } }, 60000);
+window.addEventListener('online', enviarPendientes);
+</script>
+</body>
+</html>

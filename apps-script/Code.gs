@@ -86,7 +86,8 @@ const HOJAS = {
   GuardiaRol: ['fecha', 'cargo', 'grado_nombre', 'celular', 'pin', 'token'],
   GuardiaFotos: ['id', 'fecha', 'cargo', 'turno', 'lugar', 'hora', 'recibida', 'archivo_id', 'grado_nombre'],
   EnlacesComando: ['semana', 'token', 'pin'],
-  GuardiaObs: ['fecha', 'cargo', 'turno', 'lugar', 'texto', 'hora', 'grado_nombre']
+  GuardiaObs: ['fecha', 'cargo', 'turno', 'lugar', 'texto', 'hora', 'grado_nombre'],
+  RelevoFotos: ['fecha', 'item', 'hora', 'recibida', 'archivo_id', 'grado_nombre']
 };
 
 /* ---------- Instalación ---------- */
@@ -414,6 +415,30 @@ const CARGOS_GUARDIA = {
   PATRULLA: { nombre: 'OFICIAL DE PATRULLA', lugares: ['Fuerte 1', 'Fuerte 2', 'Campo Salado', 'Confital', 'Granja 1', 'Barrio Chino'] }
 };
 
+// Relevo de guardia: lo registra el Ayudante de Órdenes, de 05:00 a 07:30 del día asignado.
+const AYUDANTE = 'AYUDANTE';
+const RELEVO = { nombre: 'AYUDANTE DE ÓRDENES', desde: '05:00', hasta: '07:30',
+  items: ['Revisión de uniformes', 'Control de personal', 'Ceremonia de relevo', 'Firma de libros'] };
+
+/** Relevo abierto solo de 05:00 a 07:30 del día asignado (hora de Bolivia, según el servidor). */
+function relevoAbierto_(fecha, ms) {
+  const d = new Date(ms), hm = Utilities.formatDate(d, TZ, 'HH:mm');
+  return Utilities.formatDate(d, TZ, 'yyyy-MM-dd') === fecha && hm >= RELEVO.desde && hm < RELEVO.hasta;
+}
+
+/** Última foto de cada punto del relevo de un día: [{ hora, recibida, archivo_id } | null, ...] */
+function fotosRelevo_(fecha, todas) {
+  const f = (todas || filas_('RelevoFotos')).filter(x => x.fecha === fecha);
+  return RELEVO.items.map((_, i) => { const x = f.filter(y => Number(y.item) === i).pop(); return x ? { hora: x.hora, recibida: x.recibida, archivo_id: x.archivo_id } : null; });
+}
+
+function asignacionRelevo_(token, pin) {
+  const a = filas_('GuardiaRol').find(x => x.token && x.token === token && x.cargo === AYUDANTE);
+  if (!a) throw new Error('Enlace no válido.');
+  if (a.pin && String(a.pin) !== String(pin)) { Utilities.sleep(1500); throw new Error('PIN incorrecto.'); }
+  return a;
+}
+
 // Turno de 24 h: de 07:00 a 07:00 del día siguiente.
 const TURNOS = [
   { id: 'MANANA', nombre: 'Mañana', horario: '07:00 a 13:00' },
@@ -434,7 +459,7 @@ function turnoDe_(ms) {
 }
 
 function asignacionGuardia_(token, pin) {
-  const a = filas_('GuardiaRol').find(x => x.token && x.token === token);
+  const a = filas_('GuardiaRol').find(x => x.token && x.token === token && CARGOS_GUARDIA[x.cargo]);
   if (!a) throw new Error('Enlace no válido.');
   if (a.pin && String(a.pin) !== String(pin)) { Utilities.sleep(1500); throw new Error('PIN incorrecto.'); }
   return a;
@@ -456,6 +481,8 @@ function conteoGuardia_(fecha, cargo) {
 }
 
 function mensajeGuardia_(a, url) {
+  if (a.cargo === AYUDANTE) return '*RELEVO DE GUARDIA - ESCONBOL*\n' + a.grado_nombre + ', usted está designado como ' + RELEVO.nombre +
+    ' para el relevo del ' + a.fecha + ' (' + RELEVO.desde + ' a ' + RELEVO.hasta + ').\n\nRegistre las 4 fotografías del relevo en:\n' + url + 'relevo.html?t=' + a.token;
   return '*CONTROL DE GUARDIA - ESCONBOL*\n' + a.grado_nombre + ', usted está designado como ' + CARGOS_GUARDIA[a.cargo].nombre +
     ' para la guardia del ' + a.fecha + ' (07:00 a 07:00).\n\nRegistre las fotografías de cada turno en:\n' + url + 'guardia.html?t=' + a.token;
 }
@@ -487,6 +514,28 @@ Object.assign(ACCIONES, {
              cerrado: actual.fecha === a.fecha && !actual.abierto,
              terminada: actual.fecha > a.fecha, ahora: Date.now(), conteo: conteoGuardia_(a.fecha, a.cargo),
              santoSena: santoSenaDe_(a.fecha), obs: obsGuardia_(a.fecha, a.cargo) };
+  },
+  /* Ayudante de Órdenes: relevo de guardia */
+  relevoAbrir: req => {
+    const a = asignacionRelevo_(req.token, req.pin);
+    const ahora = Date.now();
+    return { fecha: a.fecha, cargo: RELEVO.nombre, grado_nombre: a.grado_nombre, items: RELEVO.items, desde: RELEVO.desde, hasta: RELEVO.hasta,
+             abierto: relevoAbierto_(a.fecha, ahora), ahora: ahora, terminado: hoy_() > a.fecha || (hoy_() === a.fecha && Utilities.formatDate(new Date(ahora), TZ, 'HH:mm') >= RELEVO.hasta),
+             fotos: fotosRelevo_(a.fecha).map(x => x ? { hora: x.hora } : null) };
+  },
+  relevoFoto: req => {
+    const a = asignacionRelevo_(req.token, req.pin);
+    const ahora = Date.now(), tomada = Number(req.tomada) || ahora;
+    if (tomada > ahora + 2 * 60 * 1000 || tomada < ahora - 3 * 3600 * 1000) throw new Error('La hora de la foto no es válida.');
+    if (!relevoAbierto_(a.fecha, tomada)) throw new Error('El relevo solo se registra de ' + RELEVO.desde + ' a ' + RELEVO.hasta + ' del ' + a.fecha + '.');
+    const i = Number(req.item);
+    if (!(i >= 0 && i < RELEVO.items.length)) throw new Error('Punto no válido.');
+    if (!/^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(req.foto || '')) throw new Error('Imagen no válida.');
+    const hora = Utilities.formatDate(new Date(tomada), TZ, 'yyyy-MM-dd HH:mm:ss');
+    const nombre = a.fecha + ' Relevo - ' + (i + 1) + ' ' + RELEVO.items[i] + ' - ' + hora.slice(11).replace(/:/g, '.') + '.jpg';
+    const archivo = carpetaGuardia_(a.fecha).createFile(Utilities.newBlob(Utilities.base64Decode(req.foto.split(',')[1]), 'image/jpeg', nombre));
+    hoja_('RelevoFotos').appendRow([a.fecha, String(i), hora, Utilities.formatDate(new Date(ahora), TZ, 'yyyy-MM-dd HH:mm:ss'), archivo.getId(), a.grado_nombre]);
+    return { hora: hora, fotos: fotosRelevo_(a.fecha).map(x => x ? { hora: x.hora } : null) };
   },
   guardiaFoto: req => {
     const a = asignacionGuardia_(req.token, req.pin);
@@ -540,7 +589,7 @@ Object.assign(ACCIONES, {
     admin_(req);
     const semana = lunes_(req.semana), finS = finSemana_(semana);
     const previas = filas_('GuardiaRol').filter(r => r.fecha >= semana && r.fecha <= finS);
-    const rol = (req.rol || []).filter(r => r.fecha >= semana && r.fecha <= finS && CARGOS_GUARDIA[r.cargo] && r.grado_nombre);
+    const rol = (req.rol || []).filter(r => r.fecha >= semana && r.fecha <= finS && (CARGOS_GUARDIA[r.cargo] || r.cargo === AYUDANTE) && r.grado_nombre);
     reemplazar_('GuardiaRol', r => r.fecha >= semana && r.fecha <= finS, rol.map(r => {
       const cel = celular_(r.celular);
       const prev = previas.find(x => x.fecha === r.fecha && x.cargo === r.cargo && x.celular === cel);
@@ -563,6 +612,7 @@ Object.assign(ACCIONES, {
     const semana = e.semana, finS = finSemana_(semana), hoy = hoy_();
     const rondas = filas_('Rondas'), resp = filas_('Responsables'), rol = filas_('GuardiaRol'), santos = filas_('SantoSena'), obs = filas_('GuardiaObs');
     const fotos = filas_('GuardiaFotos').filter(f => f.fecha >= semana && f.fecha <= finS);
+    const relevos = filas_('RelevoFotos'), ahora = Date.now();
     const dias = [];
     for (let i = 0; i < 7; i++) {
       const d = new Date(semana + 'T12:00:00'); d.setDate(d.getDate() + i);
@@ -579,6 +629,14 @@ Object.assign(ACCIONES, {
                    leyendas: ok && r.leyendas ? r.leyendas.split('|') : [],
                    estado: r && r.estado === 'COMPLETADO' ? 'PASÓ RONDA' : (fecha >= hoy ? 'PENDIENTE' : 'NO PASÓ RONDA') };
         }),
+        relevo: (() => {
+          const a = rol.find(x => x.fecha === fecha && x.cargo === AYUDANTE);
+          const fs = fotosRelevo_(fecha, relevos), n = fs.filter(Boolean).length;
+          const fin = fecha < hoy || (fecha === hoy && Utilities.formatDate(new Date(ahora), TZ, 'HH:mm') >= RELEVO.hasta);
+          const estado = n === RELEVO.items.length ? 'REALIZADO' : !fin ? 'PENDIENTE' : n ? 'INCOMPLETO' : 'NO SE REALIZÓ';
+          return { grado_nombre: a ? a.grado_nombre : '', estado: estado, items: RELEVO.items,
+                   fotos: fs.map(x => x ? { hora: x.hora, recibida: x.recibida } : null) };
+        })(),
         guardia: Object.keys(CARGOS_GUARDIA).map(c => {
           const a = rol.find(x => x.fecha === fecha && x.cargo === c);
           return { cargo: c, cargoNombre: CARGOS_GUARDIA[c].nombre, grado_nombre: a ? a.grado_nombre : '', lugares: CARGOS_GUARDIA[c].lugares,
@@ -594,6 +652,13 @@ Object.assign(ACCIONES, {
     const f = filas_('GuardiaFotos').find(x => x.id === req.id);
     if (!f || f.fecha < e.semana || f.fecha > finSemana_(e.semana)) throw new Error('Foto no encontrada.');
     return { base64: Utilities.base64Encode(DriveApp.getFileById(f.archivo_id).getBlob().getBytes()) };
+  },
+  comandoRelevoFoto: req => {
+    const e = comandoEnlace_(req.token, req.pin);
+    if (!req.fecha || req.fecha < e.semana || req.fecha > finSemana_(e.semana)) throw new Error('Foto no encontrada.');
+    const x = fotosRelevo_(req.fecha)[Number(req.n)];
+    if (!x) throw new Error('Foto no encontrada.');
+    return { base64: Utilities.base64Encode(DriveApp.getFileById(x.archivo_id).getBlob().getBytes()) };
   },
   comandoRondaFoto: req => {
     const r = rondaDeSemana_(comandoEnlace_(req.token, req.pin), req.id);
